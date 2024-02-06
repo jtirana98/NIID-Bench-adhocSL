@@ -1524,7 +1524,37 @@ if __name__ == '__main__':
             total_data_points = sum([len(net_dataidx_map[r]) for r in selected])
             fed_avg_freqs = [len(net_dataidx_map[r]) / total_data_points for r in selected]
 
-            # Aggregation
+            # Find similarity clients
+            cos = torch.nn.CosineSimilarity(dim=0)
+            clients_similarity = np.zeros((args.n_parties, args.n_parties))
+
+            params_clients = []
+            for client in range(args.n_parties):
+                param_client = []
+
+                net_para_a = nets[client][0].cpu().state_dict()
+                net_para_b = nets[client][1].cpu().state_dict()
+                net_para_c = nets[client][2].cpu().state_dict()
+
+                for key in net_para_a:
+                    param_client.append(net_para_a[key].view(-1))
+                for key in net_para_b:
+                    param_client.append(net_para_b[key].view(-1))
+                for key in net_para_c:
+                    param_client.append(net_para_c[key].view(-1))
+                
+                param_client = torch.cat(param_client)
+                #print(param_client)
+                params_clients.append(param_client)
+            
+            print('Here is the similarity cosine')
+            for client_i in range(args.n_parties):
+                for client_j in range(args.n_parties):
+                    clients_similarity[client_i,client_j] = cos(params_clients[client_i], params_clients[client_j])
+            
+            print(clients_similarity)
+
+            # Aggregation adhocSL
             for idx in range(len(selected)):
                 net_para_a = nets[selected[idx]][0].cpu().state_dict()
                 net_para_b = nets[selected[idx]][1].cpu().state_dict()
@@ -1591,7 +1621,7 @@ if __name__ == '__main__':
             local_train_net(nets, selected, args, net_dataidx_map, test_dl = test_dl_global, device=device)
             # local_train_net(nets, args, net_dataidx_map, local_split=False, device=device)
 
-            # update global model
+            # Aggregation - FedAvg
             total_data_points = sum([len(net_dataidx_map[r]) for r in selected])
             fed_avg_freqs = [len(net_dataidx_map[r]) / total_data_points for r in selected]
 
@@ -1681,7 +1711,8 @@ if __name__ == '__main__':
             # update global model
             total_data_points = sum([len(net_dataidx_map[r]) for r in selected])
             fed_avg_freqs = [len(net_dataidx_map[r]) / total_data_points for r in selected]
-            # Aggregation
+            
+            # Aggregation - Fedprox
             for idx in range(len(selected)):
                 net_para_a = nets[selected[idx]][0].cpu().state_dict()
                 net_para_b = nets[selected[idx]][1].cpu().state_dict()
@@ -1824,7 +1855,7 @@ if __name__ == '__main__':
             global_model.load_state_dict(global_para)
             '''
 
-            # Aggregation
+            # Aggregation - Scaffold
             for idx in range(len(selected)):
                 net_para_a = nets[selected[idx]][0].cpu().state_dict()
                 net_para_b = nets[selected[idx]][1].cpu().state_dict()
@@ -1949,7 +1980,8 @@ if __name__ == '__main__':
 
             _, a_list, d_list, n_list = local_train_net_fednova(nets, selected, global_model, args, net_dataidx_map, test_dl = test_dl_global, device=device)
             total_n = sum(n_list)
-            # AGGREGATION
+            
+            # Aggregation - Fednova
             d_total_round = (copy.deepcopy(global_model[0].state_dict()), 
                              copy.deepcopy(global_model[1].state_dict()), 
                              copy.deepcopy(global_model[2].state_dict())
