@@ -1578,6 +1578,34 @@ if __name__ == '__main__':
             global_model[1].load_state_dict(global_para_b)
             global_model[2].load_state_dict(global_para_c)
 
+            # Find similarity clients to global model
+            cos = torch.nn.CosineSimilarity(dim=0)
+            clients_similarity = np.zeros((args.n_parties))
+
+
+            param_aggr = []
+
+            net_para_a = global_model[0].cpu().state_dict()
+            net_para_b = global_model[1].cpu().state_dict()
+            net_para_c = global_model[2].cpu().state_dict()
+
+            for key in net_para_a:
+                param_aggr.append(net_para_a[key].view(-1))
+            for key in net_para_b:
+                param_aggr.append(net_para_b[key].view(-1))
+            for key in net_para_c:
+                param_aggr.append(net_para_c[key].view(-1))
+                
+            param_aggr = torch.cat(param_aggr)
+
+            
+            print('Here is the similarity cosine with aggregator')
+            for client_i in range(args.n_parties):
+                clients_similarity[client_i] = cos(params_clients[client_i], param_aggr)
+            
+            print(clients_similarity)
+
+
             logger.info('global n_training: %d' % len(train_dl_global))
             logger.info('global n_test: %d' % len(test_dl_global))
             
