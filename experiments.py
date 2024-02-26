@@ -23,6 +23,9 @@ from vggmodel import *
 from resnetcifar import *
 from models import resnet_split_model 
 
+logger = []
+logger_batchnorm = []
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='mlp', help='neural network used in training')
@@ -64,7 +67,7 @@ def get_args():
     args = parser.parse_args()
     return args
 
-def init_nets(net_configs, dropout_p, n_parties, args):
+def init_nets(net_configs, dropout_p, n_parties, args, logger_batchnorm=[]):
     nets = {net_i: None for net_i in range(n_parties)}
 
     if args.dataset in {'mnist', 'cifar10', 'svhn', 'fmnist'}:
@@ -122,7 +125,7 @@ def init_nets(net_configs, dropout_p, n_parties, args):
                 # ------ NEW: ADHOC configuration -----
                 elif args.alg == 'adhocSL':
                     if args.model == "resnet":
-                        net = resnet_split_model.get_resnet_split(n_classes, args.cut_a, args.cut_b, args.model_type)
+                        net = resnet_split_model.get_resnet_split(n_classes, args.cut_a, args.cut_b, args.model_type, logger_batchnorm)
                     elif args.model == 'simple-cnn':
                         if args.dataset in ("mnist", 'femnist', 'fmnist'):
                             net = get_simpleCNNMINST_split(args.cut_a, args.cut_b, input_dim=(16 * 4 * 4), hidden_dims=[120, 84], output_dim=10)
@@ -199,6 +202,8 @@ def init_nets(net_configs, dropout_p, n_parties, args):
 
 def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_optimizer, device="cpu", adhoc=False, data_sharing=False, helpers=[]):
     logger.info('Training network %s' % str(net_id))
+    logger_batchnorm.info('Training network %s' % str(net_id))
+    
     if data_sharing:
         train_acc = compute_accuracy(net[net_id], train_dataloader, device=device, adhoc=adhoc)
         test_acc, conf_matrix = compute_accuracy(net[net_id], test_dataloader, get_confusion_matrix=True, device=device, adhoc=adhoc)
@@ -423,6 +428,9 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
             net[1].to(device)
             net[2].to(device)
             
+            
+            logger_batchnorm.info('Epoch: %d')
+
             for tmp in train_dataloader:
                 for batch_idx, (x, target) in enumerate(tmp):
                     x, target = x.to(device), target.to(device)
@@ -1406,10 +1414,17 @@ def find_helpers(dataset, net_dataidx_map, n_parties, traindata_cls_counts):
 
 # MAIN
 if __name__ == '__main__':
-    # torch.set_printoptions(profile="full")
+
+    # MAKE DIRECTORIES
+
     args = get_args()
     mkdirs(args.logdir)
     mkdirs(args.modeldir)
+    batch_log_dir = 'batch_data-%s' % datetime.datetime.now().strftime("%Y-%m-%d-%H:%M-%S")
+    mkdirs(args.logdir+'/'+batch_log_dir)
+
+
+    # Create argument file
     if args.log_file_name is None:
         argument_path='experiment_arguments-%s.json' % datetime.datetime.now().strftime("%Y-%m-%d-%H:%M-%S")
     else:
@@ -1417,26 +1432,91 @@ if __name__ == '__main__':
     with open(os.path.join(args.logdir, argument_path), 'w') as f:
         json.dump(str(args), f)
     device = torch.device(args.device)
-    # logging.basicConfig(filename='test.log', level=logger.info, filemode='w')
-    # logging.info("test")
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
+
+    
+    # Configure logging
+
+    # original logger:
 
     if args.log_file_name is None:
         args.log_file_name = 'experiment_log-%s' % (datetime.datetime.now().strftime("%Y-%m-%d-%H:%M-%S"))
     log_path=args.log_file_name+'.log'
+
+    log_setup = logging.getLogger('original')
+    formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', datefmt='%m-%d %H:%M')
+    
+    fileHandler = logging.FileHandler(os.path.join(args.logdir, log_path), mode='w')
+    fileHandler.setFormatter(formatter)
+    '''
+    streamHandler = logging.StreamHandler()
+    streamHandler.setFormatter(formatter)
+    '''
+    log_setup.addHandler(fileHandler)
+    #log_setup.addHandler(streamHandler)
+    
+
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    log_setup.setLevel(logging.DEBUG)
+
+
+    # batchnorm logger
+    log_path_batch = 'batch_data-%s.log' % datetime.datetime.now().strftime("%Y-%m-%d-%H:%M-%S")
+    filename= args.logdir+'/'+batch_log_dir+'/'+log_path_batch
+    log_setup = logging.getLogger('batchnorm')
+    formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', datefmt='%m-%d %H:%M')
+    
+    fileHandler = logging.FileHandler(filename, mode='w')
+    fileHandler.setFormatter(formatter)
+    
+    '''
+    streamHandler = logging.StreamHandler()
+    streamHandler.setFormatter(formatter)
+    '''
+    log_setup.addHandler(fileHandler)
+    #log_setup.addHandler(streamHandler)
+    
+
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    log_setup.setLevel(logging.DEBUG)
+   
+
+
+    '''
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    
     logging.basicConfig(
-        filename=os.path.join(args.logdir, log_path),
+        filename=,
         # filename='/home/qinbin/test.log',
         format='%(asctime)s %(levelname)-8s %(message)s',
         datefmt='%m-%d %H:%M', level=logging.DEBUG, filemode='w')
+    
+    log_path_batch = 'batch_data-%s.log' % datetime.datetime.now().strftime("%Y-%m-%d-%H:%M-%S")
 
-    logger = logging.getLogger()
+    logging.basicConfig(
+        filename= args.logdir+'/'+batch_log_dir+'/'+log_path_batch,
+        # filename='/home/qinbin/test.log',
+        format='%(asctime)s %(levelname)-8s %(message)s',
+        datefmt='%m-%d %H:%M', level=logging.DEBUG, filemode='w')
+    '''
+
+    logger = logging.getLogger('original')
     logger.setLevel(logging.DEBUG)
     logger.info(device)
 
+    logger_batchnorm = logging.getLogger('batchnorm')
+    logger_batchnorm.setLevel(logging.DEBUG)
+    logger_batchnorm.info(device)
+
+
     seed = args.init_seed
     logger.info("#" * 100)
+    logger_batchnorm.info("HEHHEHEHEHEHEHE")
     np.random.seed(seed)
     torch.manual_seed(seed)
     random.seed(seed)
@@ -1492,13 +1572,14 @@ if __name__ == '__main__':
         graph_comm = find_helpers(args.dataset, net_dataidx_map, args.n_parties, traindata_cls_counts)
 
         logger.info("Initializing nets")
-        nets, local_model_meta_data, layer_type = init_nets(args.net_config, args.dropout_p, args.n_parties, args)
-        global_models, global_model_meta_data, global_layer_type = init_nets(args.net_config, 0, 1, args)
+        nets, local_model_meta_data, layer_type = init_nets(args.net_config, args.dropout_p, args.n_parties, args, logger_batchnorm)
+        global_models, global_model_meta_data, global_layer_type = init_nets(args.net_config, 0, 1, args, logger_batchnorm)
         global_model = global_models[0]
 
         global_para_a = global_model[0].state_dict()
         global_para_b = global_model[1].state_dict()
         global_para_c = global_model[2].state_dict()
+        
         if args.is_same_initial:
             for net_id, net in nets.items():
                 net[0].load_state_dict(global_para_a)
