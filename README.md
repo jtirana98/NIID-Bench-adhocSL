@@ -1,11 +1,4 @@
-# NIID-Bench
-
-[![paper](https://img.shields.io/badge/PAPER-arXiv-yellowgreen?style=for-the-badge)](https://arxiv.org/pdf/2102.02079.pdf)
-&nbsp;&nbsp;&nbsp;
-[![paper](https://img.shields.io/badge/leaderboard-5%2B%20Methods-228c22?style=for-the-badge)](https://niidbench.xtra.science/)
-&nbsp;&nbsp;&nbsp;
-
-This is the code of paper [Federated Learning on Non-IID Data Silos: An Experimental Study](https://arxiv.org/pdf/2102.02079.pdf).
+# NIID-Bench for adHocSL
 
 
 This code runs a benchmark for federated learning algorithms under non-IID data distribution scenarios. Specifically, we implement 4 federated learning algorithms (FedAvg, FedProx, SCAFFOLD & FedNova), 3 types of non-IID settings (label distribution skew, feature distribution skew & quantity skew) and 9 datasets (MNIST, Cifar-10, Fashion-MNIST, SVHN, Generated 3D dataset, FEMNIST, adult, rcv1, covtype).
