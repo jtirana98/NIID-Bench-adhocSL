@@ -1,11 +1,16 @@
 import torch
 from torch import nn
+from scipy.stats import skew 
+from scipy.stats import kurtosis 
 
 class ResBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, downsample, batch_logger=[]):
+    def __init__(self, in_channels, out_channels, downsample, batch_logger=None, name_block=''):
         super().__init__()
+        
         self.downsample = downsample
         self.batch_logger = batch_logger
+        self.name_block = name_block
+
         if downsample:
             self.conv1 = nn.Conv2d(
                 in_channels, out_channels, kernel_size=3, stride=2, padding=1)
@@ -26,8 +31,29 @@ class ResBlock(nn.Module):
     def forward(self, input):
         
         shortcut = self.shortcut(input)
+        if self.batch_logger != None:
+            self.batch_logger.info(f'>>> ResBlock {self.name_block} - Before')
+            self.batch_logger.info(f'Dimention: {input.size()}')
+            self.batch_logger.info(f'Mean: {torch.mean(input)}')
+            self.batch_logger.info(f'Median: {torch.median(input)}')
+            self.batch_logger.info(f'std: {torch.std(input)}')
+            flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
+            self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
+            self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
+            
         input = nn.ReLU()(self.bn1(self.conv1(input)))
         # PRINT HERE - cov2_1 conv 4_1 and conv 5_1
+
+        if self.batch_logger != None:
+            self.batch_logger.info(f'>>> ResBlock {self.name_block} - After')
+            self.batch_logger.info(f'Dimention: {input.size()}')
+            self.batch_logger.info(f'Mean: {torch.mean(input)}')
+            self.batch_logger.info(f'Median: {torch.median(input)}')
+            self.batch_logger.info(f'std: {torch.std(input)}')
+            flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
+            self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
+            self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
+        
         input = nn.ReLU()(self.bn2(self.conv2(input)))
         input = input + shortcut
 
@@ -122,7 +148,7 @@ class ResNet(nn.Module):
             if start or ((not start) and (self.first_cut == itter)): #when to start
                 # have already started, or just started
                 if end or ((not end) and (self.last_cut > itter)):
-                    self.layers.add_module('conv2_%d'%(i+1,), resblock(filters[1], filters[1], downsample=False, batch_logger=batch_logger))
+                    self.layers.add_module('conv2_%d'%(i+1,), resblock(filters[1], filters[1], downsample=False, batch_logger=batch_logger, name_block='conv2_%d'%(i+1,)))
     
                     start = True
                 else:
@@ -161,7 +187,7 @@ class ResNet(nn.Module):
         if start or ((not start) and (self.first_cut == itter)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > itter)):
-                self.layers.add_module('conv4_1', resblock(filters[2], filters[3], downsample=True, batch_logger=batch_logger))
+                self.layers.add_module('conv4_1', resblock(filters[2], filters[3], downsample=True, batch_logger=batch_logger, name_block='conv4_1'))
 
                 start = True
             else:
@@ -185,7 +211,7 @@ class ResNet(nn.Module):
         if start or ((not start) and (self.first_cut == itter)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > itter)):
-                self.layers.add_module('conv5_1', resblock(filters[3], filters[4], downsample=True, batch_logger=batch_logger))
+                self.layers.add_module('conv5_1', resblock(filters[3], filters[4], downsample=True, batch_logger=batch_logger, name_block='conv5_1'))
 
                 start = True
             else:
@@ -197,7 +223,7 @@ class ResNet(nn.Module):
             if start or ((not start) and (self.first_cut == itter)): #when to start
                 # have already started, or just started
                 if end or ((not end) and (self.last_cut > itter)):
-                    self.layers.add_module('conv5_%d'%(i+1,),resblock(filters[4], filters[4], downsample=False, batch_logger=batch_logger))
+                    self.layers.add_module('conv5_%d'%(i+1,),resblock(filters[4], filters[4], downsample=False, batch_logger=batch_logger, name_block='conv5_%d'%(i+1,)))
     
                     start = True
                 else:
@@ -229,9 +255,25 @@ class ResNet(nn.Module):
     def forward(self, input):
         
         if self.first_cut == -1: #not empty
-            self.batch_logger.info('>>> First layer')
+            self.batch_logger.info('>>> First layer - Before')
             self.batch_logger.info(f'Dimention: {input.size()}')
+            self.batch_logger.info(f'Mean: {torch.mean(input)}')
+            self.batch_logger.info(f'Median: {torch.median(input)}')
+            self.batch_logger.info(f'std: {torch.std(input)}')
+            flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
+            self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
+            self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
             input = self.layer1(input)
+            self.batch_logger.info('>>> First layer - AFTER')
+            self.batch_logger.info(f'Dimention: {input.size()}')
+            self.batch_logger.info(f'Mean: {torch.mean(input)}')
+            self.batch_logger.info(f'Median: {torch.median(input)}')
+            self.batch_logger.info(f'std: {torch.std(input)}')
+            flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
+            self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
+            self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
+
+
 
         if ((self.first_cut == -1) or (self.first_cut != -1 and self.first_cut <  self.total - 2)): #not empty
             input = self.layers(input)

@@ -202,8 +202,8 @@ def init_nets(net_configs, dropout_p, n_parties, args, logger_batchnorm=[]):
 
 def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_optimizer, device="cpu", adhoc=False, data_sharing=False, helpers=[]):
     logger.info('Training network %s' % str(net_id))
-    logger_batchnorm.info('Training network %s' % str(net_id))
-    
+    logger_batchnorm.info('------------ Training network %s -----------------' % str(net_id))
+    logger_batchnorm.info('pre-training')
     if data_sharing:
         train_acc = compute_accuracy(net[net_id], train_dataloader, device=device, adhoc=adhoc)
         test_acc, conf_matrix = compute_accuracy(net[net_id], test_dataloader, get_confusion_matrix=True, device=device, adhoc=adhoc)
@@ -220,7 +220,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
     if args_optimizer == 'adam':
         if adhoc:
             if data_sharing:
-                logger.info('Data sharing round')
+                
                 optimizer_b = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][1].parameters()), lr=lr, weight_decay=args.reg)
                 optimizer_a =[]
                 optimizer_c = []
@@ -305,6 +305,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
     #writer = SummaryWriter()
     num_helpers = len(helpers)
     for epoch in range(epochs):
+        logger_batchnorm.info('Epoch: %d' % epoch)
         epoch_loss_collector = []
         i_helper = 0
         if data_sharing:
@@ -332,6 +333,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     x_s.append(x)
                     targets.append(target)
                 for it in range(iterations):
+                    logger_batchnorm.info('>>>>>>>>>>>>>> New batch <<<<<<<<<<<')
                     #print(f'It is {it}')
                     optimizer_b.zero_grad()
                     
@@ -340,6 +342,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     # forward to helpers model part a
                     det_out_as = []
                     for i_helper in range(num_helpers):
+                        logger_batchnorm.info(f'helper {i_helper}')
                         net_params =  net[i_helper][0].state_dict()
                         tempModel[0].load_state_dict(net_params)
 
@@ -419,7 +422,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
             # end of epoch
             epoch_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
             logger.info('Epoch: %d Loss: %f' % (epoch, epoch_loss))
-            
+            logger_batchnorm.info('after-training')
             train_acc = compute_accuracy(net[net_id], train_dataloader, device=device, adhoc=adhoc)
             test_acc, conf_matrix = compute_accuracy(net[net_id], test_dataloader, get_confusion_matrix=True, device=device, adhoc=adhoc)
         else:
@@ -428,11 +431,9 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
             net[1].to(device)
             net[2].to(device)
             
-            
-            logger_batchnorm.info('Epoch: %d')
-
             for tmp in train_dataloader:
                 for batch_idx, (x, target) in enumerate(tmp):
+                    logger_batchnorm.info('>>>>>>>>>>>>>> New batch <<<<<<<<<<<')
                     x, target = x.to(device), target.to(device)
                     if adhoc:
                         optimizer_b.zero_grad()
@@ -1588,7 +1589,7 @@ if __name__ == '__main__':
 
         for round in range(args.comm_round):
             logger.info("in comm round:" + str(round))
-            
+            logger_batchnorm.info("in comm round:" + str(round))
             arr = np.arange(args.n_parties)
             np.random.shuffle(arr)
             selected = arr[:int(args.n_parties * args.sample)]
@@ -1612,6 +1613,8 @@ if __name__ == '__main__':
                 data_sharing = False
             elif ((round >= warmup) and (round % sl_step ==0)):
                 data_sharing = True
+                logger.info('Data sharing round')
+                logger_batchnorm.info('Data sharing round')
             else:
                 data_sharing = False
             
