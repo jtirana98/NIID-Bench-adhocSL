@@ -23,8 +23,8 @@ from vggmodel import *
 from resnetcifar import *
 from models import resnet_split_model 
 
-logger = []
-logger_batchnorm = []
+logger = None
+logger_batchnorm = None
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -125,7 +125,7 @@ def init_nets(net_configs, dropout_p, n_parties, args, logger_batchnorm=[]):
                 # ------ NEW: ADHOC configuration -----
                 elif args.alg == 'adhocSL':
                     if args.model == "resnet":
-                        net = resnet_split_model.get_resnet_split(n_classes, args.cut_a, args.cut_b, args.model_type, logger_batchnorm)
+                        net = resnet_split_model.get_resnet_split(n_classes, args.cut_a, args.cut_b, args.model_type, batch_logger=logger_batchnorm)
                     elif args.model == 'simple-cnn':
                         if args.dataset in ("mnist", 'femnist', 'fmnist'):
                             net = get_simpleCNNMINST_split(args.cut_a, args.cut_b, input_dim=(16 * 4 * 4), hidden_dims=[120, 84], output_dim=10)
