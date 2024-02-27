@@ -67,7 +67,7 @@ def get_args():
     args = parser.parse_args()
     return args
 
-def init_nets(net_configs, dropout_p, n_parties, args, logger_batchnorm=[]):
+def init_nets(net_configs, dropout_p, n_parties, args, logger_batchnorm=None):
     nets = {net_i: None for net_i in range(n_parties)}
 
     if args.dataset in {'mnist', 'cifar10', 'svhn', 'fmnist'}:
@@ -203,20 +203,29 @@ def init_nets(net_configs, dropout_p, n_parties, args, logger_batchnorm=[]):
 def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_optimizer, device="cpu", adhoc=False, data_sharing=False, helpers=[]):
     logger.info('Training network %s' % str(net_id))
     logger_batchnorm.info('------------ Training network %s -----------------' % str(net_id))
-    logger_batchnorm.info('pre-training')
     if data_sharing:
-        train_acc = compute_accuracy(net[net_id], train_dataloader, device=device, adhoc=adhoc)
-        test_acc, conf_matrix = compute_accuracy(net[net_id], test_dataloader, get_confusion_matrix=True, device=device, adhoc=adhoc)
+        tempModels_test, _, _ = init_nets(args.net_config, 0, 1, args)
+        for i in range(3):
+            net_params =  net[net_id][i].state_dict()
+            tempModels_test[0][i].load_state_dict(net_params)
+        train_acc = compute_accuracy(tempModels_test[0], train_dataloader, device=device, adhoc=adhoc)
+        test_acc, conf_matrix = compute_accuracy(tempModels_test[0], test_dataloader, get_confusion_matrix=True, device=device, adhoc=adhoc)
 
-        tempModels, _, _ = init_nets(args.net_config, 0, 1, args)
+        #train_acc = compute_accuracy(net[net_id], train_dataloader, device=device, adhoc=adhoc)
+        #test_acc, conf_matrix = compute_accuracy(net[net_id], test_dataloader, get_confusion_matrix=True, device=device, adhoc=adhoc)
+
+        tempModels, _, _ = init_nets(args.net_config, 0, 1, args, logger_batchnorm=logger_batchnorm)
         tempModel = tempModels[0]
     else:
-        train_acc = compute_accuracy(net, train_dataloader, device=device, adhoc=adhoc)
-        test_acc, conf_matrix = compute_accuracy(net, test_dataloader, get_confusion_matrix=True, device=device, adhoc=adhoc)
+        tempModels_test, _, _ = init_nets(args.net_config, 0, 1, args)
+        for i in range(3):
+            net_params =  net[i_helper][i].state_dict()
+            tempModels_test[0][i].load_state_dict(net_params)
+        train_acc = compute_accuracy(tempModels_test, train_dataloader, device=device, adhoc=adhoc)
+        test_acc, conf_matrix = compute_accuracy(tempModels_test, test_dataloader, get_confusion_matrix=True, device=device, adhoc=adhoc)
 
     logger.info('>> Pre-Training Training accuracy: {}'.format(train_acc))
     logger.info('>> Pre-Training Test accuracy: {}'.format(test_acc))
-
     if args_optimizer == 'adam':
         if adhoc:
             if data_sharing:
@@ -309,6 +318,10 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
         epoch_loss_collector = []
         i_helper = 0
         if data_sharing:
+            net[net_id][0].to(device)
+            net[net_id][1].to(device)
+            net[net_id][2].to(device) 
+
             for tmps in zip(*train_dataloader):
                 batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)])  # TODO: THIS NEEDS CHECK
                 #print(f'BATCH prev {batch_size}')
@@ -323,7 +336,8 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                 # get the data samples
                 x_s = []
                 targets = []
-
+                if portion == 1:
+                    continue
                 for i_helper in range(num_helpers):
                     x, target = tmps[i_helper]
                     x, target = x.to(device), target.to(device)
@@ -342,7 +356,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     # forward to helpers model part a
                     det_out_as = []
                     for i_helper in range(num_helpers):
-                        logger_batchnorm.info(f'helper {i_helper}')
+                        logger_batchnorm.info(f'First Model part helper {i_helper}')
                         net_params =  net[i_helper][0].state_dict()
                         tempModel[0].load_state_dict(net_params)
 
@@ -360,6 +374,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     
                     # concate activations and forward to model part b
                     det_out_a_all = torch.cat(det_out_as)
+                    
                     out_b = net[net_id][1](det_out_a_all)
                     det_out_b = out_b.clone().detach().requires_grad_(True)
                     det_out_b.to(device)
@@ -370,6 +385,8 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     start = 0
                     portion_ = 0
                     for i_helper in range(num_helpers):
+                        logger_batchnorm.info(f'Last Model part helper {i_helper}')
+                        
                         net_params =  net[i_helper][2].state_dict()
 
                         
@@ -423,8 +440,14 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
             epoch_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
             logger.info('Epoch: %d Loss: %f' % (epoch, epoch_loss))
             logger_batchnorm.info('after-training')
-            train_acc = compute_accuracy(net[net_id], train_dataloader, device=device, adhoc=adhoc)
-            test_acc, conf_matrix = compute_accuracy(net[net_id], test_dataloader, get_confusion_matrix=True, device=device, adhoc=adhoc)
+            
+            tempModels_test, _, _ = init_nets(args.net_config, 0, 1, args)
+            for i in range(3):
+                net_params =  net[net_id][i].state_dict()
+                tempModels_test[0][i].load_state_dict(net_params)
+            train_acc = compute_accuracy(tempModels_test[0], train_dataloader, device=device, adhoc=adhoc)
+            test_acc, conf_matrix = compute_accuracy(tempModels_test[0], test_dataloader, get_confusion_matrix=True, device=device, adhoc=adhoc)
+
         else:
 
             net[0].to(device)

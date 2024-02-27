@@ -125,10 +125,8 @@ class ResNet(nn.Module):
                 nn.BatchNorm2d(64),
                 nn.ReLU()
             )
-            self.layers = nn.Sequential()
-        else:
-            self.layers = nn.Sequential()
-        
+            
+        self.layers = nn.Sequential()
         itter += 1
 
         if start or ((not start) and (self.first_cut == itter)): #when to start
@@ -264,7 +262,10 @@ class ResNet(nn.Module):
                 flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
                 self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
                 self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
-                input = self.layer1(input)
+            
+            input = self.layer1(input)
+
+            if self.batch_logger != None:
                 self.batch_logger.info('>>> First layer - AFTER')
                 self.batch_logger.info(f'Dimention: {input.size()}')
                 self.batch_logger.info(f'Mean: {torch.mean(input)}')
