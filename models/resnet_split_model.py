@@ -92,7 +92,7 @@ class ResBottleneckBlock(nn.Module):
         return nn.ReLU()(input)
 
 class ResNet(nn.Module):
-    def __init__(self, in_channels, resblock, repeat, useBottleneck=False, outputs=10, first_cut=-1, last_cut=-1, batch_logger=[]):
+    def __init__(self, in_channels, resblock, repeat, useBottleneck=False, outputs=10, first_cut=-1, last_cut=-1, batch_logger=None):
         itter = 0
         super().__init__()
         self.batch_logger = batch_logger
@@ -255,23 +255,24 @@ class ResNet(nn.Module):
     def forward(self, input):
         
         if self.first_cut == -1: #not empty
-            self.batch_logger.info('>>> First layer - Before')
-            self.batch_logger.info(f'Dimention: {input.size()}')
-            self.batch_logger.info(f'Mean: {torch.mean(input)}')
-            self.batch_logger.info(f'Median: {torch.median(input)}')
-            self.batch_logger.info(f'std: {torch.std(input)}')
-            flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
-            self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
-            self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
-            input = self.layer1(input)
-            self.batch_logger.info('>>> First layer - AFTER')
-            self.batch_logger.info(f'Dimention: {input.size()}')
-            self.batch_logger.info(f'Mean: {torch.mean(input)}')
-            self.batch_logger.info(f'Median: {torch.median(input)}')
-            self.batch_logger.info(f'std: {torch.std(input)}')
-            flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
-            self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
-            self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
+            if self.batch_logger != None:
+                self.batch_logger.info('>>> First layer - Before')
+                self.batch_logger.info(f'Dimention: {input.size()}')
+                self.batch_logger.info(f'Mean: {torch.mean(input)}')
+                self.batch_logger.info(f'Median: {torch.median(input)}')
+                self.batch_logger.info(f'std: {torch.std(input)}')
+                flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
+                self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
+                self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
+                input = self.layer1(input)
+                self.batch_logger.info('>>> First layer - AFTER')
+                self.batch_logger.info(f'Dimention: {input.size()}')
+                self.batch_logger.info(f'Mean: {torch.mean(input)}')
+                self.batch_logger.info(f'Median: {torch.median(input)}')
+                self.batch_logger.info(f'std: {torch.std(input)}')
+                flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
+                self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
+                self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
 
 
 
