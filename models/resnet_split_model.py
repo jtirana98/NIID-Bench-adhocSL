@@ -287,7 +287,7 @@ class ResNet(nn.Module):
 
         return input
 
-def get_resnet18(outputs=10, first_cut=-1, last_cut=-1, batch_logger=[]):
+def get_resnet18(outputs=10, first_cut=-1, last_cut=-1, batch_logger=None):
     return ResNet(3, ResBlock, [2, 2, 2, 2], False, outputs, first_cut, last_cut, batch_logger=batch_logger)
 
 def get_resnet34(outputs=10, first_cut=-1, last_cut=-1):
@@ -303,7 +303,7 @@ def get_resnet152(outputs=10, first_cut=-1, last_cut=-1):
     return ResNet(3, ResBottleneckBlock, [3, 8, 36, 3], True, outputs, first_cut, last_cut)
 
 
-def get_resnet_split(outputs, first_cut, last_cut, type, batch_logger=[]):
+def get_resnet_split(outputs, first_cut, last_cut, type, batch_logger=None):
     if type == 'resnet18':
         model_part_a = get_resnet18(outputs, -1, first_cut, batch_logger=batch_logger)
         model_part_b = get_resnet18(outputs, first_cut, last_cut, batch_logger=batch_logger)
