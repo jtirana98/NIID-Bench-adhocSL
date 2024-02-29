@@ -1,22 +1,22 @@
 import torch
 from torch import nn
-from scipy.stats import skew 
-from scipy.stats import kurtosis 
 
 class ResBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, downsample, batch_logger=None, name_block=''):
+    def __init__(self, in_channels, out_channels, downsample, inter=False):
         super().__init__()
-        
         self.downsample = downsample
-        self.batch_logger = batch_logger
-        self.name_block = name_block
-
+        self.inter = inter
+        
         if downsample:
             self.conv1 = nn.Conv2d(
                 in_channels, out_channels, kernel_size=3, stride=2, padding=1)
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=2),
                 nn.BatchNorm2d(out_channels)
+            )
+
+            self.shortcut2 = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=2),
             )
         else:
             self.conv1 = nn.Conv2d(
@@ -29,34 +29,19 @@ class ResBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(out_channels)
 
     def forward(self, input):
-        
-        shortcut = self.shortcut(input)
-        if self.batch_logger != None:
-            self.batch_logger.info(f'>>> ResBlock {self.name_block} - Before')
-            self.batch_logger.info(f'Dimention: {input.size()}')
-            self.batch_logger.info(f'Mean: {torch.mean(input)}')
-            self.batch_logger.info(f'Median: {torch.median(input)}')
-            self.batch_logger.info(f'std: {torch.std(input)}')
-            flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
-            self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
-            self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
-            
-        input = nn.ReLU()(self.bn1(self.conv1(input)))
-        # PRINT HERE - cov2_1 conv 4_1 and conv 5_1
-
-        if self.batch_logger != None:
-            self.batch_logger.info(f'>>> ResBlock {self.name_block} - After')
-            self.batch_logger.info(f'Dimention: {input.size()}')
-            self.batch_logger.info(f'Mean: {torch.mean(input)}')
-            self.batch_logger.info(f'Median: {torch.median(input)}')
-            self.batch_logger.info(f'std: {torch.std(input)}')
-            flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
-            self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
-            self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
-        
-        input = nn.ReLU()(self.bn2(self.conv2(input)))
-        input = input + shortcut
-
+        if self.inter:
+            if self.downsample:
+                shortcut = self.shortcut2(input)
+            else:
+                shortcut = self.shortcut(input)
+            input = nn.ReLU()(self.conv1(input))
+            input = nn.ReLU()(self.conv2(input))
+            input = input + shortcut
+        else:
+            shortcut = self.shortcut(input)
+            input = nn.ReLU()(self.bn1(self.conv1(input)))
+            input = nn.ReLU()(self.bn2(self.conv2(input)))
+            input = input + shortcut
         return nn.ReLU()(input)
 
 
@@ -92,10 +77,10 @@ class ResBottleneckBlock(nn.Module):
         return nn.ReLU()(input)
 
 class ResNet(nn.Module):
-    def __init__(self, in_channels, resblock, repeat, useBottleneck=False, outputs=10, first_cut=-1, last_cut=-1, batch_logger=None):
+    def __init__(self, in_channels, resblock, repeat, useBottleneck=False, outputs=10, first_cut=-1, last_cut=-1, inter=False):
         itter = 0
         super().__init__()
-        self.batch_logger = batch_logger
+        
         self.first_cut = first_cut
         self.last_cut = last_cut
         start = False
@@ -115,24 +100,29 @@ class ResNet(nn.Module):
         self.total = 3
         for i in repeat:
             self.total = self.total + i
+
+        # last layers
+        self.gap = torch.nn.AdaptiveAvgPool2d(1)
+        self.fc = torch.nn.Linear(filters[4], outputs)
         
         
         # from the beginning
         if first_cut == -1:
-            self.layer1 = nn.Sequential(
+            self.layers = nn.Sequential(
                 nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3),
                 nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
                 nn.BatchNorm2d(64),
                 nn.ReLU()
             )
-            
-        self.layers = nn.Sequential()
+        else:
+            self.layers = nn.Sequential()
+        
         itter += 1
 
         if start or ((not start) and (self.first_cut == itter)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > itter)):
-                self.layers.add_module('conv2_1', resblock(filters[0], filters[1], downsample=False))  
+                self.layers.add_module('conv2_1', resblock(filters[0], filters[1], downsample=False,  inter=inter))  
 
                 start = True
             else:
@@ -146,7 +136,7 @@ class ResNet(nn.Module):
             if start or ((not start) and (self.first_cut == itter)): #when to start
                 # have already started, or just started
                 if end or ((not end) and (self.last_cut > itter)):
-                    self.layers.add_module('conv2_%d'%(i+1,), resblock(filters[1], filters[1], downsample=False, batch_logger=batch_logger, name_block='conv2_%d'%(i+1,)))
+                    self.layers.add_module('conv2_%d'%(i+1,), resblock(filters[1], filters[1], downsample=False,  inter=inter))
     
                     start = True
                 else:
@@ -159,7 +149,7 @@ class ResNet(nn.Module):
         if start or ((not start) and (self.first_cut == itter)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > itter)):
-                self.layers.add_module('conv3_1', resblock(filters[1], filters[2], downsample=True))
+                self.layers.add_module('conv3_1', resblock(filters[1], filters[2], downsample=True,  inter=inter))
 
                 start = True
             else:
@@ -172,7 +162,7 @@ class ResNet(nn.Module):
             if start or ((not start) and (self.first_cut == itter)): #when to start
                 # have already started, or just started
                 if end or ((not end) and (self.last_cut > itter)):
-                    self.layers.add_module('conv3_%d' % (i+1,), resblock(filters[2], filters[2], downsample=False))
+                    self.layers.add_module('conv3_%d' % (i+1,), resblock(filters[2], filters[2], downsample=False,  inter=inter))
     
                     start = True
                 else:
@@ -185,7 +175,7 @@ class ResNet(nn.Module):
         if start or ((not start) and (self.first_cut == itter)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > itter)):
-                self.layers.add_module('conv4_1', resblock(filters[2], filters[3], downsample=True, batch_logger=batch_logger, name_block='conv4_1'))
+                self.layers.add_module('conv4_1', resblock(filters[2], filters[3], downsample=True,  inter=inter))
 
                 start = True
             else:
@@ -197,7 +187,7 @@ class ResNet(nn.Module):
             if start or ((not start) and (self.first_cut == itter)): #when to start
                 # have already started, or just started
                 if end or ((not end) and (self.last_cut > itter)):
-                    self.layers.add_module('conv4_%d' % (i+1,), resblock(filters[3], filters[3], downsample=False))
+                    self.layers.add_module('conv4_%d' % (i+1,), resblock(filters[3], filters[3], downsample=False,  inter=inter))
     
                     start = True
                 else:
@@ -209,7 +199,7 @@ class ResNet(nn.Module):
         if start or ((not start) and (self.first_cut == itter)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > itter)):
-                self.layers.add_module('conv5_1', resblock(filters[3], filters[4], downsample=True, batch_logger=batch_logger, name_block='conv5_1'))
+                self.layers.add_module('conv5_1', resblock(filters[3], filters[4], downsample=True,  inter=inter))
 
                 start = True
             else:
@@ -221,65 +211,15 @@ class ResNet(nn.Module):
             if start or ((not start) and (self.first_cut == itter)): #when to start
                 # have already started, or just started
                 if end or ((not end) and (self.last_cut > itter)):
-                    self.layers.add_module('conv5_%d'%(i+1,),resblock(filters[4], filters[4], downsample=False, batch_logger=batch_logger, name_block='conv5_%d'%(i+1,)))
+                    self.layers.add_module('conv5_%d'%(i+1,),resblock(filters[4], filters[4], downsample=False, inter=inter))
     
                     start = True
                 else:
                     # reached end
                     return 
-                
-        # last layers
-        itter += 1
-        if start or ((not start) and (self.first_cut == itter)): #when to start
-            # have already started, or just started
-            if end or ((not end) and (self.last_cut > itter)):
-                self.gap = torch.nn.AdaptiveAvgPool2d(1)
-                start = True
-            else:
-                # reached end
-                return
-        
-        itter += 1
-        if start or ((not start) and (self.first_cut == itter)): #when to start
-            # have already started, or just started
-            if end or ((not end) and (self.last_cut > itter)):
-                self.fc = torch.nn.Linear(filters[4], outputs)
-                start = True
-            else:
-                # reached end
-                return 
-
-        
     def forward(self, input):
-        
-        if self.first_cut == -1: #not empty
-            if self.batch_logger != None:
-                self.batch_logger.info('>>> First layer - Before')
-                self.batch_logger.info(f'Dimention: {input.size()}')
-                self.batch_logger.info(f'Mean: {torch.mean(input)}')
-                self.batch_logger.info(f'Median: {torch.median(input)}')
-                self.batch_logger.info(f'std: {torch.std(input)}')
-                flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
-                self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
-                self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
-            
-            input = self.layer1(input)
-
-            if self.batch_logger != None:
-                self.batch_logger.info('>>> First layer - AFTER')
-                self.batch_logger.info(f'Dimention: {input.size()}')
-                self.batch_logger.info(f'Mean: {torch.mean(input)}')
-                self.batch_logger.info(f'Median: {torch.median(input)}')
-                self.batch_logger.info(f'std: {torch.std(input)}')
-                flattened = torch.flatten(input, start_dim=0).to('cpu').detach().numpy()
-                self.batch_logger.info(f'SKEWNESS: {skew(flattened, axis=0, bias=True)}')
-                self.batch_logger.info(f'KURTOSIS: {kurtosis(flattened, axis=0, bias=True)}')
-
-
-
         if ((self.first_cut == -1) or (self.first_cut != -1 and self.first_cut <  self.total - 2)): #not empty
-            input = self.layers(input)
-            
+            input = self.layers(input)       
         if ((self.last_cut == -1) or ((self.last_cut != -1) and self.last_cut >= self.total - 1)):
             input = self.gap(input)
             input = torch.flatten(input, start_dim=1) 
@@ -288,8 +228,8 @@ class ResNet(nn.Module):
 
         return input
 
-def get_resnet18(outputs=10, first_cut=-1, last_cut=-1, batch_logger=None):
-    return ResNet(3, ResBlock, [2, 2, 2, 2], False, outputs, first_cut, last_cut, batch_logger=batch_logger)
+def get_resnet18(outputs=10, first_cut=-1, last_cut=-1, inter=False):
+    return ResNet(3, ResBlock, [2, 2, 2, 2], False, outputs, first_cut, last_cut, inter)
 
 def get_resnet34(outputs=10, first_cut=-1, last_cut=-1):
     return ResNet(3, ResBlock, [2, 2, 2, 2], False, outputs, first_cut, last_cut)
@@ -304,11 +244,11 @@ def get_resnet152(outputs=10, first_cut=-1, last_cut=-1):
     return ResNet(3, ResBottleneckBlock, [3, 8, 36, 3], True, outputs, first_cut, last_cut)
 
 
-def get_resnet_split(outputs, first_cut, last_cut, type, batch_logger=None):
+def get_resnet_split(outputs, first_cut, last_cut, type):
     if type == 'resnet18':
-        model_part_a = get_resnet18(outputs, -1, first_cut, batch_logger=batch_logger)
-        model_part_b = get_resnet18(outputs, first_cut, last_cut, batch_logger=batch_logger)
-        model_part_c = get_resnet18(outputs, last_cut, -1, batch_logger=batch_logger)
+        model_part_a = get_resnet18(outputs, -1, first_cut, False)
+        model_part_b = get_resnet18(outputs, first_cut, last_cut, True)
+        model_part_c = get_resnet18(outputs, last_cut, -1, False)
     if type == 'resnet34':
         model_part_a = get_resnet34(outputs, -1, first_cut)
         model_part_b = get_resnet34(outputs, first_cut, last_cut)
