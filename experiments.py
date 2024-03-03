@@ -339,7 +339,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     # forward to helpers model part a
                     det_out_as = []
                     for i_helper in range(num_helpers):
-                        if i_helper != net_id:
+                        if helpers[i_helper] != net_id:
                             net_params =  net[i_helper][0].state_dict()
                             tempModel[0].load_state_dict(net_params)
 
@@ -350,7 +350,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
 
                         x = x_s[i_helper][start_a:end_a_].to(device)
                         
-                        if i_helper != net_id:
+                        if helpers[i_helper] != net_id:
                             out_a = tempModel[0](x)
                         else: 
                             out_a = net[net_id][0](x)
@@ -371,7 +371,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     start = 0
                     portion_ = 0
                     for i_helper in range(num_helpers):
-                        if i_helper != net_id:
+                        if helpers[i_helper] != net_id:
                             net_params =  net[i_helper][2].state_dict()
                             tempModel[2].load_state_dict(net_params)
                             tempModel[2].to(device)
@@ -386,7 +386,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         portion_ = end - start
                         
                         det_out_b_ = det_out_b[start:end].clone().detach().requires_grad_(True)
-                        if i_helper != net_id:
+                        if helpers[i_helper] != net_id:
                             out = tempModel[2](det_out_b_)
                         else: 
                             out = net[net_id][2](det_out_b_)
@@ -437,10 +437,13 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                             out_a.backward(grad_a)
                             optimizer_a.step()
                     '''
-                    outa_a = det_out_as[net_id]
-                    grad_a = outa_a.grad.clone().detach()
-                    out_a.backward(grad_a)
-                    optimizer_a.step()
+                    for i_helper in range(num_helpers):
+                        if helpers[i_helper] != net_id:
+                            outa_a = det_out_as[i_helper]
+                            grad_a = outa_a.grad.clone().detach()
+                            out_a.backward(grad_a)
+                            optimizer_a.step()
+                            break
 
                     '''
                     grad_a = det_out_a.grad.clone().detach()
