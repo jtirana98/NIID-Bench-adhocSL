@@ -330,7 +330,9 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     targets.append(target)
                 for it in range(iterations):
                     #print(f'It is {it}')
+                    optimizer_a.zero_grad()
                     optimizer_b.zero_grad()
+                    optimizer_c.zero_grad()
                     
                     start_a = it*portion
                     end_a = start_a + portion
@@ -416,7 +418,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     out_b.backward(grad_b_all)
                     optimizer_b.step()
 
-
+                    '''
                     start = 0
                     portion_ = 0
                     for i_helper in range(num_helpers):
@@ -429,10 +431,16 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                                 end = start
                         portion_ = end - start
                         if i_helper == net_id:
-                            outa_a = det_out_a_all[start:end]
+                            outa_a = det_out_as[start:end]
+                            print(outa_a.size())
                             grad_a = outa_a.grad.clone().detach()
                             out_a.backward(grad_a)
                             optimizer_a.step()
+                    '''
+                    outa_a = det_out_as[net_id]
+                    grad_a = outa_a.grad.clone().detach()
+                    out_a.backward(grad_a)
+                    optimizer_a.step()
 
                     '''
                     grad_a = det_out_a.grad.clone().detach()
