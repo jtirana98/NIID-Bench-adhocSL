@@ -333,6 +333,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     end_a = start_a + portion
                     # forward to helpers model part a
                     det_out_as = []
+                    my_out_a = []
                     for i_helper in range(num_helpers):
                         if helpers[i_helper] != net_id:
                             net_params =  net[i_helper][0].state_dict()
@@ -349,6 +350,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                             out_a = tempModel[0](x)
                         else: 
                             out_a = net[net_id][0](x)
+                            my_out_a.append(outa_a)
 
                         det_out_a = out_a.clone().detach().requires_grad_(True)
                         det_out_a.to(device)
@@ -437,7 +439,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         if helpers[i_helper] == net_id:
                             outa_a = det_out_as[i_helper]
                             grad_a = outa_a.grad.clone().detach()
-                            outa_a.backward(grad_a)
+                            my_out_a[0].backward(grad_a)
                             optimizer_a.step()
                             break
 
