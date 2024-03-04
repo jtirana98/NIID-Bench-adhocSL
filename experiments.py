@@ -437,7 +437,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         if helpers[i_helper] != net_id:
                             outa_a = det_out_as[i_helper]
                             grad_a = outa_a.grad.clone().detach()
-                            out_a.backward(grad_a)
+                            outa_a.backward(grad_a)
                             optimizer_a.step()
                             break
 
