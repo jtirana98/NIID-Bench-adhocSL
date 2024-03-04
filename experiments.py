@@ -350,7 +350,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                             out_a = tempModel[0](x)
                         else: 
                             out_a = net[net_id][0](x)
-                            my_out_a.append(outa_a)
+                            my_out_a.append(out_a)
 
                         det_out_a = out_a.clone().detach().requires_grad_(True)
                         det_out_a.to(device)
