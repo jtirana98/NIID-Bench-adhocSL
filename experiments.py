@@ -306,12 +306,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
         i_helper = 0
         if data_sharing:
             for tmps in zip(*train_dataloader):
-                batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)])  # TODO: THIS NEEDS CHECK
-                #print(f'BATCH prev {batch_size}')
-
-                #batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)])  # TODO: THIS NEEDS CHECK
-                #print(f'BATCH new {batch_size}')
-                
+                batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)]) 
                 portion = int(batch_size/num_helpers)
                 if portion == 0:
                     portion = batch_size
@@ -402,7 +397,8 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         loss = criterion(out, target)
                         loss.backward()
 
-                        optimizer_c.step()
+                        if helpers[i_helper] == net_id:
+                            optimizer_c.step()
                         
                         loss_ += loss.item()                  
                         grad_b = det_out_b_.grad.clone().detach()
