@@ -219,11 +219,6 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                 optimizer_b = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][1].parameters()), lr=lr, weight_decay=args.reg)
                 optimizer_a = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][0].parameters()), lr=lr, weight_decay=args.reg)
                 optimizer_c = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][2].parameters()), lr=lr, weight_decay=args.reg)
-                '''
-                for i in range(len(helpers)):
-                    optimizer_a.append(optim.Adam(filter(lambda p: p.requires_grad, net[helpers[i]][0].parameters()), lr=lr, weight_decay=args.reg))
-                    optimizer_c.append(optim.Adam(filter(lambda p: p.requires_grad, net[helpers[i]][2].parameters()), lr=lr, weight_decay=args.reg))
-                '''
             else:
                 optimizer_a = optim.Adam(filter(lambda p: p.requires_grad, net[0].parameters()), lr=lr, weight_decay=args.reg)
                 optimizer_b = optim.Adam(filter(lambda p: p.requires_grad, net[1].parameters()), lr=lr, weight_decay=args.reg)
@@ -244,13 +239,6 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                                 amsgrad=True)
                 optimizer_c = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][2].parameters()), lr=lr, weight_decay=args.reg,
                                 amsgrad=True)
-                '''
-                for i in range(len(helpers)):
-                    optimizer_a.append(optim.Adam(filter(lambda p: p.requires_grad, net[helpers[i]][0].parameters()), lr=lr, weight_decay=args.reg,
-                                amsgrad=True))
-                    optimizer_c.append(optim.Adam(filter(lambda p: p.requires_grad, net[helpers[i]][2].parameters()), lr=lr, weight_decay=args.reg,
-                                amsgrad=True))
-                '''
             else:
                 optimizer_a = optim.Adam(filter(lambda p: p.requires_grad, net[0].parameters()), lr=lr, weight_decay=args.reg,
                                 amsgrad=True)
@@ -275,12 +263,6 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                 optimizer_b = optim.SGD(filter(lambda p: p.requires_grad, net[net_id][1].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
                 optimizer_a = optim.SGD(filter(lambda p: p.requires_grad, net[net_id][0].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
                 optimizer_c = optim.SGD(filter(lambda p: p.requires_grad, net[net_id][2].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
-
-                '''
-                for i in range(len(helpers)):
-                    optimizer_a.append(optim.SGD(filter(lambda p: p.requires_grad, net[helpers[i]][0].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg))
-                    optimizer_c.append(optim.SGD(filter(lambda p: p.requires_grad, net[helpers[i]][2].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg))
-                '''
             else:
                 optimizer_a = optim.SGD(filter(lambda p: p.requires_grad, net[0].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
                 optimizer_b = optim.SGD(filter(lambda p: p.requires_grad, net[1].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
@@ -1072,7 +1054,19 @@ def local_train_net(nets, selected, args, net_dataidx_map, test_dl = None, devic
     avg_acc = 0.0
 
     step = 0
-    
+
+    # preserve the state of the model parts
+    nets_prev = {}
+    nets_temp = {}
+    if data_sharing:
+        nets_prev, _, _ = init_nets(args.net_config, args.dropout_p, args.n_parties, args)
+        #nets_prev = hihi[0]
+        for net_id, net in nets.items():
+            for i in range(3):
+                net_params =  nets[net_id][i].state_dict()
+                nets_prev[net_id][i].load_state_dict(net_params)
+        nets_temp = copy.deepcopy(nets_prev)     
+
     for net_id, net in nets.items():
         if net_id not in selected:
             continue
@@ -1115,7 +1109,42 @@ def local_train_net(nets, selected, args, net_dataidx_map, test_dl = None, devic
         n_epoch = args.epochs
 
         if data_sharing:
-            trainacc, testacc = train_net(net_id, nets, train_dl_local, test_dl, n_epoch, args.lr, args.optimizer, device=device, adhoc=adhoc, data_sharing=True, helpers=helpers[net_id])
+            nets_temp = copy.deepcopy(nets_prev)
+            trainacc, testacc = train_net(net_id, nets_temp, train_dl_local, test_dl, n_epoch, args.lr, args.optimizer, device=device, adhoc=adhoc, data_sharing=True, helpers=helpers[net_id])
+            clients_similarity = np.zeros((args.n_parties, args.n_parties))
+            '''
+            cos = torch.nn.CosineSimilarity(dim=0)
+            print(f'Here is the similarity cosine {net_id}')
+            for client_i in range(len(nets)):
+                param_client_temp = []
+                param_client_prev = []
+                
+                net_para_a_temp = nets_temp[client_i][0].cpu().state_dict()
+                net_para_b_temp = nets_temp[client_i][1].cpu().state_dict()
+                net_para_c_temp = nets_temp[client_i][2].cpu().state_dict()
+
+                net_para_a_prev = nets_prev[client_i][0].cpu().state_dict()
+                net_para_b_prev = nets_prev[client_i][1].cpu().state_dict()
+                net_para_c_prev = nets_prev[client_i][2].cpu().state_dict()
+
+                for key in net_para_a_temp:
+                    param_client_temp.append(net_para_a_temp[key].view(-1))
+                    param_client_prev.append(net_para_a_prev[key].view(-1))
+                for key in net_para_b_temp:
+                    param_client_temp.append(net_para_b_temp[key].view(-1))
+                    param_client_prev.append(net_para_b_prev[key].view(-1))
+                for key in net_para_c_temp:
+                    param_client_temp.append(net_para_c_temp[key].view(-1))
+                    param_client_prev.append(net_para_c_prev[key].view(-1))
+
+                param_client_temp = torch.cat(param_client_temp)
+                param_client_prev = torch.cat(param_client_prev)
+                print(f'similarity for {client_i} is {cos(param_client_temp, param_client_prev)}')
+            '''
+            for i in range(3):
+                net_params =  nets_temp[net_id][i].state_dict()
+                nets[net_id][i].load_state_dict(net_params)
+
         else:
             trainacc, testacc = train_net(net_id, net, train_dl_local, test_dl, n_epoch, args.lr, args.optimizer, device=device, adhoc=adhoc)
 
