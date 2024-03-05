@@ -217,8 +217,8 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
             if data_sharing:
                 logger.info('Data sharing round')
                 optimizer_b = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][1].parameters()), lr=lr, weight_decay=args.reg)
-                optimizer_a =[]
-                optimizer_c = []
+                optimizer_a = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][0].parameters()), lr=lr, weight_decay=args.reg)
+                optimizer_c = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][2].parameters()), lr=lr, weight_decay=args.reg)
                 '''
                 for i in range(len(helpers)):
                     optimizer_a.append(optim.Adam(filter(lambda p: p.requires_grad, net[helpers[i]][0].parameters()), lr=lr, weight_decay=args.reg))
@@ -240,8 +240,10 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                 logger.info('Data sharing round')
                 optimizer_b = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][1].parameters()), lr=lr, weight_decay=args.reg,
                                 amsgrad=True)
-                optimizer_a =[]
-                optimizer_c = []
+                optimizer_a = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][0].parameters()), lr=lr, weight_decay=args.reg,
+                                amsgrad=True)
+                optimizer_c = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][2].parameters()), lr=lr, weight_decay=args.reg,
+                                amsgrad=True)
                 '''
                 for i in range(len(helpers)):
                     optimizer_a.append(optim.Adam(filter(lambda p: p.requires_grad, net[helpers[i]][0].parameters()), lr=lr, weight_decay=args.reg,
@@ -271,8 +273,8 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
             if data_sharing:
                 logger.info('Data sharing round')
                 optimizer_b = optim.SGD(filter(lambda p: p.requires_grad, net[net_id][1].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
-                optimizer_a =[]
-                optimizer_c = []
+                optimizer_a = optim.SGD(filter(lambda p: p.requires_grad, net[net_id][0].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
+                optimizer_c = optim.SGD(filter(lambda p: p.requires_grad, net[net_id][2].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
 
                 '''
                 for i in range(len(helpers)):
@@ -304,12 +306,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
         i_helper = 0
         if data_sharing:
             for tmps in zip(*train_dataloader):
-                batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)])  # TODO: THIS NEEDS CHECK
-                #print(f'BATCH prev {batch_size}')
-
-                #batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)])  # TODO: THIS NEEDS CHECK
-                #print(f'BATCH new {batch_size}')
-                
+                batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)]) 
                 portion = int(batch_size/num_helpers)
                 if portion == 0:
                     portion = batch_size
@@ -328,24 +325,33 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     targets.append(target)
                 for it in range(iterations):
                     #print(f'It is {it}')
+                    optimizer_a.zero_grad()
                     optimizer_b.zero_grad()
+                    optimizer_c.zero_grad()
                     
                     start_a = it*portion
                     end_a = start_a + portion
                     # forward to helpers model part a
                     det_out_as = []
+                    my_out_a = []
                     for i_helper in range(num_helpers):
-                        net_params =  net[i_helper][0].state_dict()
-                        tempModel[0].load_state_dict(net_params)
+                        if helpers[i_helper] != net_id:
+                            net_params =  net[i_helper][0].state_dict()
+                            tempModel[0].load_state_dict(net_params)
 
-                        tempModel[0].to(device)
+                            tempModel[0].to(device)
                         end_a_ = end_a
                         if len(targets[i_helper]) <  end_a:
                             end_a_ = len(x_s[i_helper])
 
                         x = x_s[i_helper][start_a:end_a_].to(device)
                         
-                        out_a = tempModel[0](x)
+                        if helpers[i_helper] != net_id:
+                            out_a = tempModel[0](x)
+                        else: 
+                            out_a = net[net_id][0](x)
+                            my_out_a.append(out_a)
+
                         det_out_a = out_a.clone().detach().requires_grad_(True)
                         det_out_a.to(device)
                         det_out_as.append(det_out_a)
@@ -362,11 +368,11 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     start = 0
                     portion_ = 0
                     for i_helper in range(num_helpers):
-                        net_params =  net[i_helper][2].state_dict()
+                        if helpers[i_helper] != net_id:
+                            net_params =  net[i_helper][2].state_dict()
+                            tempModel[2].load_state_dict(net_params)
+                            tempModel[2].to(device)
 
-                        
-                        tempModel[2].load_state_dict(net_params)
-                        tempModel[2].to(device)
                         start = start + portion_#i_helper*portion
                         end = start + portion
                         if len(targets[i_helper]) <  end_a:
@@ -377,7 +383,11 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         portion_ = end - start
                         
                         det_out_b_ = det_out_b[start:end].clone().detach().requires_grad_(True)
-                        out = tempModel[2](det_out_b_)
+                        if helpers[i_helper] != net_id:
+                            out = tempModel[2](det_out_b_)
+                        else: 
+                            out = net[net_id][2](det_out_b_)
+
                         out.to(device)
                         end_a_ = end_a
                         if len(targets[i_helper]) <  end_a:
@@ -388,6 +398,9 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         target = targets[i_helper][start_a:end_a_].to(device)
                         loss = criterion(out, target)
                         loss.backward()
+
+                        if helpers[i_helper] == net_id:
+                            optimizer_c.step()
                         
                         loss_ += loss.item()                  
                         grad_b = det_out_b_.grad.clone().detach()
@@ -402,6 +415,38 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     
                     out_b.backward(grad_b_all)
                     optimizer_b.step()
+
+                    '''
+                    start = 0
+                    portion_ = 0
+                    for i_helper in range(num_helpers):
+                        start = start + portion_#i_helper*portion
+                        end = start + portion
+                        if len(targets[i_helper]) <  end_a:
+                            if  len(targets[i_helper]) - start_a > 0:
+                                end = start + len(targets[i_helper]) - start_a
+                            else:
+                                end = start
+                        portion_ = end - start
+                        if i_helper == net_id:
+                            outa_a = det_out_as[start:end]
+                            print(outa_a.size())
+                            grad_a = outa_a.grad.clone().detach()
+                            out_a.backward(grad_a)
+                            optimizer_a.step()
+                    '''
+                    for i_helper in range(num_helpers):
+                        if helpers[i_helper] == net_id:
+                            outa_a = det_out_as[i_helper]
+                            grad_a = outa_a.grad.clone().detach()
+                            my_out_a[0].backward(grad_a)
+                            optimizer_a.step()
+                            break
+
+                    '''
+                    grad_a = det_out_a.grad.clone().detach()
+                    out_a.backward(grad_a)
+                    '''
                      
                     cnt += 1
                     loss__ = loss_/num_helpers
@@ -1529,10 +1574,14 @@ if __name__ == '__main__':
 
             if warmup == -1:
                 data_sharing = False
+            else:
+                data_sharing = True
+            '''
             elif ((round >= warmup) and (round % sl_step ==0)):
                 data_sharing = True
             else:
                 data_sharing = False
+            '''
             
             local_train_net(nets, selected, args, net_dataidx_map, test_dl = test_dl_global, device=device, data_sharing=data_sharing, helpers=graph_comm)
 
