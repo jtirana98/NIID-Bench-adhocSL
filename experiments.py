@@ -237,8 +237,11 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                                 amsgrad=True)
                 optimizer_a = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][0].parameters()), lr=lr, weight_decay=args.reg,
                                 amsgrad=True)
-                optimizer_c = optim.Adam(filter(lambda p: p.requires_grad, net[net_id][2].parameters()), lr=lr, weight_decay=args.reg,
-                                amsgrad=True)
+                optimizer_c = []
+                for i in range(len(helpers)):
+
+                    optimizer_c.append(optim.Adam(filter(lambda p: p.requires_grad, net[helpers[i]][2].parameters()), lr=lr, weight_decay=args.reg,
+                                amsgrad=True))
             else:
                 optimizer_a = optim.Adam(filter(lambda p: p.requires_grad, net[0].parameters()), lr=lr, weight_decay=args.reg,
                                 amsgrad=True)
@@ -262,7 +265,9 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                 logger.info('Data sharing round')
                 optimizer_b = optim.SGD(filter(lambda p: p.requires_grad, net[net_id][1].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
                 optimizer_a = optim.SGD(filter(lambda p: p.requires_grad, net[net_id][0].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
-                optimizer_c = optim.SGD(filter(lambda p: p.requires_grad, net[net_id][2].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
+                optimizer_c = []
+                for i in range(len(helpers)):
+                    optimizer_c.append(optim.SGD(filter(lambda p: p.requires_grad, net[helpers[i]][2].parameters()), momentum=args.rho, weight_decay=args.reg))
             else:
                 optimizer_a = optim.SGD(filter(lambda p: p.requires_grad, net[0].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
                 optimizer_b = optim.SGD(filter(lambda p: p.requires_grad, net[1].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
@@ -291,7 +296,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                 batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)]) 
                 portion = int(batch_size/num_helpers)
                 if portion == 0:
-                    portion = batch_size
+                    portion = 1
                 iterations = int(batch_size/portion)
                 # get the data samples
                 x_s = []
@@ -309,13 +314,13 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     #print(f'It is {it}')
                     optimizer_a.zero_grad()
                     optimizer_b.zero_grad()
-                    optimizer_c.zero_grad()
+                    #optimizer_c.zero_grad()
                     
                     start_a = it*portion
                     end_a = start_a + portion
                     # forward to helpers model part a
                     det_out_as = []
-                    my_out_a = []
+                    my_out_a = None
                     for i_helper in range(num_helpers):
                         if helpers[i_helper] != net_id:
                             net_params =  net[i_helper][0].state_dict()
@@ -330,13 +335,16 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         
                         if helpers[i_helper] != net_id:
                             out_a = tempModel[0](x)
+                            det_out_a = out_a.clone().detach().requires_grad_(True)
+                            det_out_a.to(device)
+                            det_out_as.append(det_out_a)
                         else: 
-                            out_a = net[net_id][0](x)
-                            my_out_a.append(out_a)
+                            my_out_a = net[net_id][0](x)
+                            det_out_a = my_out_a.clone().detach().requires_grad_(True)
+                            det_out_a.to(device)
+                            det_out_as.append(det_out_a)
 
-                        det_out_a = out_a.clone().detach().requires_grad_(True)
-                        det_out_a.to(device)
-                        det_out_as.append(det_out_a)
+                        
                     
                     # concate activations and forward to model part b
                     det_out_a_all = torch.cat(det_out_as)
@@ -350,6 +358,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     start = 0
                     portion_ = 0
                     for i_helper in range(num_helpers):
+                        optimizer_c[i_helper].zero_grad()
                         if helpers[i_helper] != net_id:
                             net_params =  net[i_helper][2].state_dict()
                             tempModel[2].load_state_dict(net_params)
@@ -382,7 +391,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         loss.backward()
 
                         if helpers[i_helper] == net_id:
-                            optimizer_c.step()
+                            optimizer_c[i_helper].step()
                         
                         loss_ += loss.item()                  
                         grad_b = det_out_b_.grad.clone().detach()
@@ -421,7 +430,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         if helpers[i_helper] == net_id:
                             outa_a = det_out_as[i_helper]
                             grad_a = outa_a.grad.clone().detach()
-                            my_out_a[0].backward(grad_a)
+                            my_out_a.backward(grad_a)
                             optimizer_a.step()
                             break
 
