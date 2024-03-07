@@ -307,9 +307,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     targets.append(target)
                 for it in range(iterations):
                     #print(f'It is {it}')
-                    optimizer_a.zero_grad()
-                    optimizer_b.zero_grad()
-                    optimizer_c.zero_grad()
+                    
                     
                     start_a = it*portion
                     end_a = start_a + portion
@@ -350,6 +348,10 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     start = 0
                     portion_ = 0
                     for i_helper in range(num_helpers):
+                        optimizer_a.zero_grad()
+                        optimizer_b.zero_grad()
+                        optimizer_c.zero_grad()
+
                         if helpers[i_helper] != net_id:
                             net_params =  net[i_helper][2].state_dict()
                             tempModel[2].load_state_dict(net_params)
