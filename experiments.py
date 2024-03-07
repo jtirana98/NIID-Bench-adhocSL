@@ -267,7 +267,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                 optimizer_a = optim.SGD(filter(lambda p: p.requires_grad, net[net_id][0].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
                 optimizer_c = []
                 for i in range(len(helpers)):
-                    optimizer_c.append(optim.SGD(filter(lambda p: p.requires_grad, net[helpers[i]][2].parameters()), momentum=args.rho, weight_decay=args.reg))
+                    optimizer_c.append(optim.SGD(filter(lambda p: p.requires_grad, net[helpers[i]][2].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg))
             else:
                 optimizer_a = optim.SGD(filter(lambda p: p.requires_grad, net[0].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
                 optimizer_b = optim.SGD(filter(lambda p: p.requires_grad, net[1].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
