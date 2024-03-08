@@ -1627,7 +1627,16 @@ if __name__ == '__main__':
             # Question: In case of data sharing we take these into account??
             total_data_points = sum([len(net_dataidx_map[r]) for r in selected])
             fed_avg_freqs = [len(net_dataidx_map[r]) / total_data_points for r in selected]
-
+            fed_avg_freqs_middle = []
+            if data_sharing:
+                for r in selected:
+                    sum_ = 0
+                    for i in range(len(graph_comm[r])):
+                        sum_ += len(net_dataidx_map[graph_comm[r][i]])
+                    fed_avg_freqs_middle.append(sum_/total_data_points)
+            else: 
+                fed_avg_freqs_middle = fed_avg_freqs
+            print(fed_avg_freqs_middle)
             # Aggregation
             for idx in range(len(selected)):
                 net_para_a = nets[selected[idx]][0].cpu().state_dict()
@@ -1637,14 +1646,14 @@ if __name__ == '__main__':
                     for key in net_para_a:
                         global_para_a[key] = net_para_a[key] * fed_avg_freqs[idx]
                     for key in net_para_b:
-                        global_para_b[key] = net_para_b[key] * fed_avg_freqs[idx]
+                        global_para_b[key] = net_para_b[key] * fed_avg_freqs_middle[idx]
                     for key in net_para_c:
                         global_para_c[key] = net_para_c[key] * fed_avg_freqs[idx]
                 else:
                     for key in net_para_a:
                         global_para_a[key] += net_para_a[key] * fed_avg_freqs[idx]
                     for key in net_para_b:
-                        global_para_b[key] += net_para_b[key] * fed_avg_freqs[idx]
+                        global_para_b[key] += net_para_b[key] * fed_avg_freqs_middle[idx]
                     for key in net_para_c:
                         global_para_c[key] += net_para_c[key] * fed_avg_freqs[idx]
             
