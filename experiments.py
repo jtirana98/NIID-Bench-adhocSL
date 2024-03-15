@@ -174,25 +174,6 @@ def init_nets(net_configs, dropout_p, n_parties, args):
     for (k, v) in nets[0][2].state_dict().items():
         model_meta_data.append(v.shape)
         layer_type.append(k)
-    '''
-    if args.alg == 'adhocSL':
-        for (k, v) in nets[0][0].state_dict().items():
-            model_meta_data.append(v.shape)
-            layer_type.append(k)
-
-        for (k, v) in nets[0][1].state_dict().items():
-            model_meta_data.append(v.shape)
-            layer_type.append(k)
-
-        for (k, v) in nets[0][2].state_dict().items():
-            model_meta_data.append(v.shape)
-            layer_type.append(k)
-
-    else:
-        for (k, v) in nets[0].state_dict().items():
-            model_meta_data.append(v.shape)
-            layer_type.append(k)
-    '''
     ###### FOR REPRODUCABILITY END
     return nets, model_meta_data, layer_type
 
@@ -407,25 +388,6 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     out_b.backward(grad_b_all)
                     optimizer_b.step()
 
-                    '''
-                    start = 0
-                    portion_ = 0
-                    for i_helper in range(num_helpers):
-                        start = start + portion_#i_helper*portion
-                        end = start + portion
-                        if len(targets[i_helper]) <  end_a:
-                            if  len(targets[i_helper]) - start_a > 0:
-                                end = start + len(targets[i_helper]) - start_a
-                            else:
-                                end = start
-                        portion_ = end - start
-                        if i_helper == net_id:
-                            outa_a = det_out_as[start:end]
-                            print(outa_a.size())
-                            grad_a = outa_a.grad.clone().detach()
-                            out_a.backward(grad_a)
-                            optimizer_a.step()
-                    '''
                     for i_helper in range(num_helpers):
                         if helpers[i_helper] == net_id:
                             outa_a = det_out_as[i_helper]
@@ -433,11 +395,6 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                             my_out_a.backward(grad_a)
                             optimizer_a.step()
                             break
-
-                    '''
-                    grad_a = det_out_a.grad.clone().detach()
-                    out_a.backward(grad_a)
-                    '''
                      
                     cnt += 1
                     loss__ = loss_/num_helpers
@@ -543,6 +500,223 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
 
     logger.info(' ** Training complete **')
     return train_acc, test_acc
+
+
+def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, lr, args_optimizer, device="cpu"):
+    logger.info('Training networks')
+
+    train_acc = compute_accuracy(net[0], train_dataloader, device=device)
+    test_acc, conf_matrix = compute_accuracy(net[0], test_dataloader, get_confusion_matrix=True, device=device)
+
+    
+    logger.info('>> Pre-Training Training accuracy: {}'.format(train_acc))
+    logger.info('>> Pre-Training Test accuracy: {}'.format(test_acc))
+
+    if args_optimizer == 'adam':
+        optimizer_b = optim.Adam(filter(lambda p: p.requires_grad, net[0][1].parameters()), lr=lr, weight_decay=args.reg)
+        optimizer_a = []
+        optimizer_c = []
+        for i in range(len(net_ids)):
+            optimizer_c.append(optim.Adam(filter(lambda p: p.requires_grad, net[i][2].parameters()), lr=lr, weight_decay=args.reg))
+            optimizer_a.append(optimizer_c.append(optim.Adam(filter(lambda p: p.requires_grad, net[i][0].parameters()), lr=lr, weight_decay=args.reg)))
+    
+    elif args_optimizer == 'amsgrad':
+        optimizer_b = optim.Adam(filter(lambda p: p.requires_grad, net[0][1].parameters()), lr=lr, weight_decay=args.reg,
+                        amsgrad=True)
+        
+        optimizer_a = []
+        optimizer_c = []
+        for i in range(len(net_ids)):
+            optimizer_c.append(optim.Adam(filter(lambda p: p.requires_grad, net[i][2].parameters()), lr=lr, weight_decay=args.reg,
+                        amsgrad=True))
+            optimizer_a.append(optim.Adam(filter(lambda p: p.requires_grad, net[i][0].parameters()), lr=lr, weight_decay=args.reg,
+                        amsgrad=True))
+    
+    elif args_optimizer == 'sgd':
+        optimizer_b = optim.SGD(filter(lambda p: p.requires_grad, net[0][1].parameters()), lr=lr/10, momentum=args.rho, weight_decay=args.reg)
+        optimizer_a = []
+        optimizer_c = []
+        for i in range(len(net_ids)):
+            optimizer_c.append(optim.SGD(filter(lambda p: p.requires_grad, net[i][2].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg))
+            optimizer_a.append(optim.SGD(filter(lambda p: p.requires_grad, net[i][0].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg))
+
+    criterion = nn.CrossEntropyLoss().to(device)
+
+    cnt = 0
+    if type(train_dataloader) == type([1]):
+        pass
+    else:
+        train_dataloader = [train_dataloader]
+
+    #writer = SummaryWriter()
+    num_helpers = len(net_ids)
+    for epoch in range(epochs):
+        epoch_loss_collector = []
+        i_helper = 0
+        for tmps in zip(*train_dataloader):
+            batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)]) 
+            portion = int(batch_size/num_helpers)
+            if portion == 0:
+                portion = batch_size
+            iterations = int(batch_size/portion)
+            # get the data samples
+            x_s = []
+            targets = []
+
+            for i_helper in range(num_helpers):
+                x, target = tmps[selected[i_helper]]
+                x, target = x.to(device), target.to(device)
+                x.requires_grad = True
+                target.requires_grad = False
+                target = target.long()
+                x_s.append(x)
+                targets.append(target)
+
+            for it in range(iterations):
+                optimizer_b.zero_grad()
+                
+                start_a = it*portion
+                end_a = start_a + portion
+                # forward to helpers model part a
+                det_out_as = []
+                my_out_a = []
+                for i_helper in range(num_helpers):
+                    optimizer_a[i_helper].zero_grad()
+                    end_a_ = end_a
+                    if len(targets[i_helper]) <  end_a:
+                        end_a_ = len(x_s[i_helper])
+
+                    x = x_s[i_helper][start_a:end_a_].to(device)
+                    
+                    net[selected[i_helper]][0].to(device)
+                    my_out_a.append(net[selected[i_helper]][0](x))
+                    det_out_a = my_out_a[-1].clone().detach().requires_grad_(True)
+                    det_out_a.to(device)
+                    det_out_as.append(det_out_a)
+
+                    
+                '''
+                # concate activations and forward to model part b
+                det_out_a_all = torch.cat(det_out_as)
+                net[0][1].to(device)
+                out_b = net[0][1](det_out_a_all)
+                det_out_b = out_b.clone().detach().requires_grad_(True)
+                det_out_b.to(device)
+                # forward to helpers model part c
+                grad_bs = []
+                loss_ = 0
+                '''
+                net[0][1].to(device)
+
+                out_bs = []
+                out_b_detached = []
+                for i_helper in range(num_helpers):
+                    out_b = net[0][1](det_out_as[i_helper])
+                    out_bs.append(out_b)
+                    det_out_b = out_b.clone().detach().requires_grad_(True)
+                    det_out_b.to(device)
+                    out_b_detached.append(det_out_b)
+
+                start = 0
+                portion_ = 0
+                grad_bs = []
+                loss_ = 0
+                for i_helper in range(num_helpers):
+                    optimizer_c[i_helper].zero_grad()
+                    
+                    start = start + portion_#i_helper*portion
+                    end = start + portion
+                    if len(targets[i_helper]) <  end_a:
+                        if  len(targets[i_helper]) - start_a > 0:
+                            end = start + len(targets[i_helper]) - start_a
+                        else:
+                            end = start
+                    portion_ = end - start
+                    
+                    #det_out_b_ = det_out_b[start:end].clone().detach().requires_grad_(True)
+                    
+                    net[selected[i_helper]][2].to(device)
+                    out = net[selected[i_helper]][2](out_b_detached[i_helper])
+
+                    out.to(device)
+                    end_a_ = end_a
+                    if len(targets[i_helper]) <  end_a:
+                        end_a_ = len(targets[i_helper])
+                    if targets[i_helper][start_a:end_a_].size()[0] == 0 or out.size()[0] == 0:
+                        continue
+                    
+                    target = targets[i_helper][start_a:end_a_].to(device)
+                    loss = criterion(out, target)
+                    loss.backward()
+
+                    
+                    
+                    loss_ += loss.item()                  
+                    grad_b = out_b_detached[i_helper].grad.clone().detach()
+                    grad_b.to(device)
+                    grad_bs.append(grad_b)
+                    optimizer_c[i_helper].step()
+                
+                '''
+                # concate the gradients and backprop to model part b
+                grad_b_all = torch.cat(grad_bs)
+
+                grad_b_all.to(device)
+                out_b.to(device)
+                '''
+
+                grad_as = []
+                for i_helper in range(num_helpers):
+                    out_bs[i_helper].to(device)
+                    out_bs[i_helper].backward(grad_bs[i_helper])
+                    grad_a = det_out_as[i_helper].grad.clone().detach()
+                    grad_a.to(device)
+                    grad_as.append(grad_a)
+                optimizer_b.step()
+
+                start = 0
+                portion_ = 0
+                
+                for i_helper in range(num_helpers):
+                    start = start + portion_
+                    end = start + portion
+
+                    if len(targets[i_helper]) <  end_a:
+                        if  len(targets[i_helper]) - start_a > 0:
+                            end = start + len(targets[i_helper]) - start_a
+                        else:
+                            end = start
+                    portion_ = end - start
+                    
+                    #outa_a =  det_out_a_all[start:end].clone().detach().requires_grad_(True)
+                    #grad_a = outa_a.grad.clone().detach()
+                    my_out_a[i_helper].backward(grad_as[i_helper])
+                    optimizer_a[i_helper].step()
+                    
+                cnt += 1
+                loss__ = loss_/num_helpers
+                epoch_loss_collector.append(loss__)
+        
+        for i_helper in range(num_helpers):
+            net[net_ids[i_helper]][0].to('cpu')
+            net[net_ids[i_helper]][1].to('cpu')
+            net[net_ids[i_helper]][2].to('cpu') 
+        
+        # end of epoch
+        epoch_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
+        logger.info('Epoch: %d Loss: %f' % (epoch, epoch_loss))
+        
+    
+    train_acc = compute_accuracy(net[0], train_dataloader, device=device)
+    test_acc, conf_matrix = compute_accuracy(net[0], test_dataloader, get_confusion_matrix=True, device=device)
+        
+    logger.info('>> Training accuracy: %f' % train_acc)
+    logger.info('>> Test accuracy: %f' % test_acc)
+     
+
+    logger.info(' ** Training complete **')
+    return train_acc, test_acc
+
 
 
 
@@ -1121,35 +1295,7 @@ def local_train_net(nets, selected, args, net_dataidx_map, test_dl = None, devic
             nets_temp = copy.deepcopy(nets_prev)
             trainacc, testacc = train_net(net_id, nets_temp, train_dl_local, test_dl, n_epoch, args.lr, args.optimizer, device=device, adhoc=adhoc, data_sharing=True, helpers=helpers[net_id])
             clients_similarity = np.zeros((args.n_parties, args.n_parties))
-            '''
-            cos = torch.nn.CosineSimilarity(dim=0)
-            print(f'Here is the similarity cosine {net_id}')
-            for client_i in range(len(nets)):
-                param_client_temp = []
-                param_client_prev = []
-                
-                net_para_a_temp = nets_temp[client_i][0].cpu().state_dict()
-                net_para_b_temp = nets_temp[client_i][1].cpu().state_dict()
-                net_para_c_temp = nets_temp[client_i][2].cpu().state_dict()
-
-                net_para_a_prev = nets_prev[client_i][0].cpu().state_dict()
-                net_para_b_prev = nets_prev[client_i][1].cpu().state_dict()
-                net_para_c_prev = nets_prev[client_i][2].cpu().state_dict()
-
-                for key in net_para_a_temp:
-                    param_client_temp.append(net_para_a_temp[key].view(-1))
-                    param_client_prev.append(net_para_a_prev[key].view(-1))
-                for key in net_para_b_temp:
-                    param_client_temp.append(net_para_b_temp[key].view(-1))
-                    param_client_prev.append(net_para_b_prev[key].view(-1))
-                for key in net_para_c_temp:
-                    param_client_temp.append(net_para_c_temp[key].view(-1))
-                    param_client_prev.append(net_para_c_prev[key].view(-1))
-
-                param_client_temp = torch.cat(param_client_temp)
-                param_client_prev = torch.cat(param_client_prev)
-                print(f'similarity for {client_i} is {cos(param_client_temp, param_client_prev)}')
-            '''
+            
             for i in range(3):
                 net_params =  nets_temp[net_id][i].state_dict()
                 nets[net_id][i].load_state_dict(net_params)
@@ -1164,6 +1310,56 @@ def local_train_net(nets, selected, args, net_dataidx_map, test_dl = None, devic
         # save_model(net, net_id, args)
         # else:
         #     load_model(net, net_id, device=device)
+    avg_acc /= len(selected)
+    if args.alg == 'local_training':
+        logger.info("avg test acc %f" % avg_acc)
+
+    nets_list = list(nets.values())
+    return nets_list
+
+def local_train_net_mergesfl(nets, selected, args, net_dataidx_map, test_dl = None, device="cpu"):
+    avg_acc = 0.0
+
+    step = 0
+
+    
+    train_dl_local = [0 for i in range(len(selected))]
+
+    for net_id, net in nets.items():
+        noise_level = args.noise / (args.n_parties - 1) * net_id
+        if net_id not in selected:
+            continue
+        dataidxs = net_dataidx_map[net_id]
+
+        #logger.info("Training network %s. n_training: %d" % (str(net_id), len(dataidxs)))
+        # move the model to cuda device:
+        
+        
+        net[0].to(device)
+        net[1].to(device)
+        net[2].to(device)
+        
+        noise_level = args.noise
+        if net_id == args.n_parties - 1:
+            noise_level = 0
+
+        if args.noise_type == 'space':
+            train_dl_local_, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1)
+            train_dl_local[net_id] = train_dl_local_
+        else:
+            dataidxs_ = net_dataidx_map[net_id]
+            train_dl_local_, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs_, noise_level)
+            train_dl_local[net_id] = train_dl_local_
+            
+        
+    n_epoch = args.epochs
+    print(selected)
+    trainacc, testacc = train_net_mergesfl(selected, nets, train_dl_local, test_dl, n_epoch, args.lr, args.optimizer, device=device)
+    
+    logger.info("net %d final test acc %f" % (0, testacc))
+    avg_acc += testacc
+    step += 1
+        
     avg_acc /= len(selected)
     if args.alg == 'local_training':
         logger.info("avg test acc %f" % avg_acc)
@@ -1627,16 +1823,7 @@ if __name__ == '__main__':
             # Question: In case of data sharing we take these into account??
             total_data_points = sum([len(net_dataidx_map[r]) for r in selected])
             fed_avg_freqs = [len(net_dataidx_map[r]) / total_data_points for r in selected]
-            fed_avg_freqs_middle = []
-            if data_sharing:
-                for r in selected:
-                    sum_ = 0
-                    for i in range(len(graph_comm[r])):
-                        sum_ += len(net_dataidx_map[graph_comm[r][i]])
-                    fed_avg_freqs_middle.append(sum_/total_data_points)
-            else: 
-                fed_avg_freqs_middle = fed_avg_freqs
-            print(fed_avg_freqs_middle)
+            
             # Aggregation
             for idx in range(len(selected)):
                 net_para_a = nets[selected[idx]][0].cpu().state_dict()
@@ -1646,16 +1833,100 @@ if __name__ == '__main__':
                     for key in net_para_a:
                         global_para_a[key] = net_para_a[key] * fed_avg_freqs[idx]
                     for key in net_para_b:
-                        global_para_b[key] = net_para_b[key] * fed_avg_freqs_middle[idx]
+                        global_para_b[key] = net_para_b[key] * fed_avg_freqs[idx]
                     for key in net_para_c:
                         global_para_c[key] = net_para_c[key] * fed_avg_freqs[idx]
                 else:
                     for key in net_para_a:
                         global_para_a[key] += net_para_a[key] * fed_avg_freqs[idx]
                     for key in net_para_b:
-                        global_para_b[key] += net_para_b[key] * fed_avg_freqs_middle[idx]
+                        global_para_b[key] += net_para_b[key] * fed_avg_freqs[idx]
                     for key in net_para_c:
                         global_para_c[key] += net_para_c[key] * fed_avg_freqs[idx]
+            
+            global_model[0].load_state_dict(global_para_a)
+            global_model[1].load_state_dict(global_para_b)
+            global_model[2].load_state_dict(global_para_c)
+
+            logger.info('global n_training: %d' % len(train_dl_global))
+            logger.info('global n_test: %d' % len(test_dl_global))
+            
+            global_model[0].to(device)
+            global_model[1].to(device)
+            global_model[2].to(device)
+            train_acc = compute_accuracy(global_model, train_dl_global, device=device, adhoc=True)
+            test_acc, conf_matrix = compute_accuracy(global_model, test_dl_global, get_confusion_matrix=True, device=device, adhoc=True)
+
+
+            logger.info('>> Global Model Train accuracy: %f' % train_acc)
+            logger.info('>> Global Model Test accuracy: %f' % test_acc)
+
+    if args.alg == 'mergesfl':
+        print("Running mergesfl algorithm.")
+        
+        logger.info("Initializing nets")
+        nets, local_model_meta_data, layer_type = init_nets(args.net_config, args.dropout_p, args.n_parties, args)
+        global_models, global_model_meta_data, global_layer_type = init_nets(args.net_config, 0, 1, args)
+        global_model = global_models[0]
+
+        global_para_a = global_model[0].state_dict()
+        global_para_b = global_model[1].state_dict()
+        global_para_c = global_model[2].state_dict()
+        if args.is_same_initial:
+            for net_id, net in nets.items():
+                net[0].load_state_dict(global_para_a)
+                net[1].load_state_dict(global_para_b)
+                net[2].load_state_dict(global_para_c)
+
+        for round in range(args.comm_round):
+            logger.info("in comm round:" + str(round))
+            
+            arr = np.arange(args.n_parties)
+            np.random.shuffle(arr)
+            selected = arr[:int(args.n_parties * args.sample)]
+
+            global_para_a = global_model[0].state_dict()
+            global_para_b = global_model[1].state_dict()
+            global_para_c = global_model[2].state_dict()
+            if round == 0:
+                if args.is_same_initial:
+                    for idx in selected:
+                        nets[idx][0].load_state_dict(global_para_a)
+                        nets[idx][1].load_state_dict(global_para_b)
+                        nets[idx][2].load_state_dict(global_para_c)
+            else:
+                for idx in selected:
+                    nets[idx][0].load_state_dict(global_para_a)
+                    nets[idx][1].load_state_dict(global_para_b)
+                    nets[idx][2].load_state_dict(global_para_c)
+
+            
+            local_train_net_mergesfl(nets, selected, args, net_dataidx_map, test_dl = test_dl_global, device=device)
+
+            # update global model
+            # Question: In case of data sharing we take these into account??
+            total_data_points = sum([len(net_dataidx_map[r]) for r in selected])
+            fed_avg_freqs = [len(net_dataidx_map[r]) / total_data_points for r in selected]
+            
+            # Aggregation
+            for idx in range(len(selected)):
+                net_para_a = nets[selected[idx]][0].cpu().state_dict()
+                net_para_b = nets[selected[idx]][1].cpu().state_dict()
+                net_para_c = nets[selected[idx]][2].cpu().state_dict()
+                if idx == 0:
+                    for key in net_para_a:
+                        global_para_a[key] = net_para_a[key]* fed_avg_freqs[idx]
+                    for key in net_para_c:
+                        global_para_c[key] = net_para_c[key] * fed_avg_freqs[idx]
+                else:
+                    for key in net_para_a:
+                        global_para_a[key] += net_para_a[key] * fed_avg_freqs[idx]
+                    for key in net_para_c:
+                        global_para_c[key] += net_para_c[key] * fed_avg_freqs[idx]
+                
+                if selected[idx] == 0:
+                    for key in net_para_b:
+                        global_para_b[key] = net_para_b[key]
             
             global_model[0].load_state_dict(global_para_a)
             global_model[1].load_state_dict(global_para_b)
