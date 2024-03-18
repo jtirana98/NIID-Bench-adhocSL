@@ -706,12 +706,11 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
         epoch_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
         logger.info('Epoch: %d Loss: %f' % (epoch, epoch_loss))
         
-    
-    train_acc = compute_accuracy(net[0], train_dataloader, device=device)
-    test_acc, conf_matrix = compute_accuracy(net[0], test_dataloader, get_confusion_matrix=True, device=device)
-        
-    logger.info('>> Training accuracy: %f' % train_acc)
-    logger.info('>> Test accuracy: %f' % test_acc)
+    for i in net_ids:
+        train_acc = compute_accuracy([net[i][0], net[0][1], net[i][2]], train_dataloader, device=device)
+        test_acc, conf_matrix = compute_accuracy([net[i][0], net[0][1], net[i][2]], test_dataloader, get_confusion_matrix=True, device=device)
+            
+        logger.info(f'>> Training accuracy of {i}: {train_acc}  >> Test accuracy: {i}: {test_acc}')
      
 
     logger.info(' ** Training complete **')
