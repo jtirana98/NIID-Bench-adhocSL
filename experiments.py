@@ -157,6 +157,8 @@ def init_nets(net_configs, dropout_p, n_parties, args):
                     net = resnet_split_model.get_resnet_split(n_classes, args.cut_a, args.cut_b, args.model_type)
                 elif args.model == "vgg16":
                     net = vgg16()
+                elif args.model == "vgg19":
+                    net = vgg19()
                 else:
                     print("not supported yet")
                     exit(1)
@@ -633,7 +635,9 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                     x = x_s[i_helper][start_a:end_a_].to(device)
                     
                     net[selected[i_helper]][0].to(device)
-                    my_out_a.append(net[selected[i_helper]][0](x))
+                    outa = net[selected[i_helper]][0](x)
+                    outa.to(device)
+                    my_out_a.append(outa)
                     det_out_a = my_out_a[-1].clone().detach().requires_grad_(True)
                     det_out_a.to(device)
                     det_out_as.append(det_out_a)
