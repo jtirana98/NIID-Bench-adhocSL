@@ -16,6 +16,7 @@ import random
 
 import datetime
 #from torch.utils.tensorboard import SummaryWriter
+from torch.optim.lr_scheduler import LambdaLR
 
 from model import *
 from utils import *
@@ -61,6 +62,7 @@ def get_args():
     parser.add_argument('--noise_type', type=str, default='level', help='Different level of noise or different space of noise')
     parser.add_argument('--rho', type=float, default=0, help='Parameter controlling the momentum SGD')
     parser.add_argument('--sample', type=float, default=1, help='Sample ratio for each communication round')
+    parser.add_argument('--pososto', type=float, default=1, help='percentange of samples passed in the local epoch')
     args = parser.parse_args()
     return args
 
@@ -267,7 +269,6 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
     else:
         train_dataloader = [train_dataloader]
 
-    #writer = SummaryWriter()
     num_helpers = len(helpers)
     for epoch in range(epochs):
         epoch_loss_collector = []
@@ -501,17 +502,40 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
     logger.info(' ** Training complete **')
     return train_acc, test_acc
 
+# chatGPT code
+def custom_lr_scheduler(optimizers, metrics):
+     
+    diff = np.abs(metrics - custom_lr_scheduler.prev_metric)/metrics
+    if (metrics > custom_lr_scheduler.prev_metric and diff > 0.001) or diff < 0.001:
+        custom_lr_scheduler.non_improvement_counter += 1
+    else:
+        custom_lr_scheduler.non_improvement_counter = 0
+    
+    custom_lr_scheduler.prev_metric = metrics
+    
+    if custom_lr_scheduler.non_improvement_counter >= 5:
+        order = 0
+        for optimizer in optimizers:
+            for param_group in optimizer.param_groups:
+                if order < 1:
+                    param_group['lr'] /= 2
+                else:
+                    param_group['lr'] /= 4
+            order += 1
+        custom_lr_scheduler.non_improvement_counter = 0
+    
 
-def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, lr, args_optimizer, device="cpu"):
+                       
+def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, lr, args_optimizer, device="cpu", pososto=1):
     logger.info('Training networks')
 
-    train_acc = compute_accuracy(net[0], train_dataloader, device=device)
-    test_acc, conf_matrix = compute_accuracy(net[0], test_dataloader, get_confusion_matrix=True, device=device)
+    #train_acc = compute_accuracy(net[0], train_dataloader, device=device)
+    #test_acc, conf_matrix = compute_accuracy(net[0], test_dataloader, get_confusion_matrix=True, device=device)
 
     
-    logger.info('>> Pre-Training Training accuracy: {}'.format(train_acc))
-    logger.info('>> Pre-Training Test accuracy: {}'.format(test_acc))
-
+    #logger.info('>> Pre-Training Training accuracy: {}'.format(train_acc))
+    #logger.info('>> Pre-Training Test accuracy: {}'.format(test_acc))
+    optimizers = []
     if args_optimizer == 'adam':
         optimizer_b = optim.Adam(filter(lambda p: p.requires_grad, net[0][1].parameters()), lr=lr, weight_decay=args.reg)
         optimizer_a = []
@@ -533,33 +557,45 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                         amsgrad=True))
     
     elif args_optimizer == 'sgd':
-        optimizer_b = optim.SGD(filter(lambda p: p.requires_grad, net[0][1].parameters()), lr=lr/10, momentum=args.rho, weight_decay=args.reg)
         optimizer_a = []
-        optimizer_c = []
+        optimizer_b = optim.SGD(filter(lambda p: p.requires_grad, net[0][1].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
+        optimizer_c = optim.SGD(filter(lambda p: p.requires_grad, net[0][2].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg)
+        optimizers.append(optimizer_b)
+        optimizers.append(optimizer_c)
         for i in range(len(net_ids)):
-            optimizer_c.append(optim.SGD(filter(lambda p: p.requires_grad, net[i][2].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg))
-            optimizer_a.append(optim.SGD(filter(lambda p: p.requires_grad, net[i][0].parameters()), lr=lr, momentum=args.rho, weight_decay=args.reg))
-
+            #optimizer_c.append(optim.SGD(filter(lambda p: p.requires_grad, net[i][2].parameters()), lr=lr/100, momentum=args.rho, weight_decay=args.reg))
+            optimizer_a.append(optim.SGD(filter(lambda p: p.requires_grad, net[i][0].parameters()), lr=lr/100, momentum=args.rho, weight_decay=args.reg))
+            optimizers.append(optimizer_a[-1])
+        custom_lr_scheduler.non_improvement_counter = 0
+        custom_lr_scheduler.prev_metric = 10000000
     criterion = nn.CrossEntropyLoss().to(device)
-
+    
+    
     cnt = 0
     if type(train_dataloader) == type([1]):
         pass
     else:
         train_dataloader = [train_dataloader]
-
-    #writer = SummaryWriter()
+    flag = False
     num_helpers = len(net_ids)
+    epoch_loss_prev = 0
     for epoch in range(epochs):
+        '''
+        if flag:
+            break
+        '''
         epoch_loss_collector = []
         i_helper = 0
         for tmps in zip(*train_dataloader):
+            '''
+            if flag:
+                break
+            '''
             batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)]) 
             portion = int(batch_size/num_helpers)
             if portion == 0:
                 portion = batch_size
             iterations = int(batch_size/portion)
-            # get the data samples
             x_s = []
             targets = []
 
@@ -571,8 +607,16 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                 target = target.long()
                 x_s.append(x)
                 targets.append(target)
-
+            
+            its_pososto = int(iterations*pososto)
             for it in range(iterations):
+
+                if it == its_pososto:
+                    break
+                '''
+                if flag:
+                    break
+                '''
                 optimizer_b.zero_grad()
                 
                 start_a = it*portion
@@ -595,17 +639,6 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                     det_out_as.append(det_out_a)
 
                     
-                '''
-                # concate activations and forward to model part b
-                det_out_a_all = torch.cat(det_out_as)
-                net[0][1].to(device)
-                out_b = net[0][1](det_out_a_all)
-                det_out_b = out_b.clone().detach().requires_grad_(True)
-                det_out_b.to(device)
-                # forward to helpers model part c
-                grad_bs = []
-                loss_ = 0
-                '''
                 net[0][1].to(device)
 
                 out_bs = []
@@ -617,6 +650,7 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                     det_out_b.to(device)
                     out_b_detached.append(det_out_b)
 
+                '''
                 start = 0
                 portion_ = 0
                 grad_bs = []
@@ -632,11 +666,26 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                         else:
                             end = start
                     portion_ = end - start
+                '''
+                start = 0
+                portion_ = 0
+                grad_bs = []
+                loss_ = 0
+                optimizer_c.zero_grad()
+                for i_helper in range(num_helpers):
+                    start = start + portion_#i_helper*portion
+                    end = start + portion
+                    if len(targets[i_helper]) <  end_a:
+                        if  len(targets[i_helper]) - start_a > 0:
+                            end = start + len(targets[i_helper]) - start_a
+                        else:
+                            end = start
+                    portion_ = end - start
                     
                     #det_out_b_ = det_out_b[start:end].clone().detach().requires_grad_(True)
                     
-                    net[selected[i_helper]][2].to(device)
-                    out = net[selected[i_helper]][2](out_b_detached[i_helper])
+                    net[0][2].to(device)
+                    out = net[0][2](out_b_detached[i_helper])
 
                     out.to(device)
                     end_a_ = end_a
@@ -649,21 +698,13 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                     loss = criterion(out, target)
                     loss.backward()
 
-                    
-                    
                     loss_ += loss.item()                  
                     grad_b = out_b_detached[i_helper].grad.clone().detach()
                     grad_b.to(device)
                     grad_bs.append(grad_b)
-                    optimizer_c[i_helper].step()
                 
-                '''
-                # concate the gradients and backprop to model part b
-                grad_b_all = torch.cat(grad_bs)
-
-                grad_b_all.to(device)
-                out_b.to(device)
-                '''
+                custom_lr_scheduler(optimizers, loss_)
+                optimizer_c.step()
 
                 grad_as = []
                 for i_helper in range(num_helpers):
@@ -672,6 +713,8 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                     grad_a = det_out_as[i_helper].grad.clone().detach()
                     grad_a.to(device)
                     grad_as.append(grad_a)
+                
+                
                 optimizer_b.step()
 
                 start = 0
@@ -688,33 +731,44 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                             end = start
                     portion_ = end - start
                     
-                    #outa_a =  det_out_a_all[start:end].clone().detach().requires_grad_(True)
-                    #grad_a = outa_a.grad.clone().detach()
                     my_out_a[i_helper].backward(grad_as[i_helper])
                     optimizer_a[i_helper].step()
                     
                 cnt += 1
                 loss__ = loss_/num_helpers
                 epoch_loss_collector.append(loss__)
-        
+                b = optimizer_b.param_groups[-1]['lr']
+                c = optimizer_c.param_groups[-1]['lr']
+                if c == 0:
+                    flag = True
+                    break
+                #print(f'for b: {b} for c: {c}')
         for i_helper in range(num_helpers):
             net[net_ids[i_helper]][0].to('cpu')
             net[net_ids[i_helper]][1].to('cpu')
             net[net_ids[i_helper]][2].to('cpu') 
         
         # end of epoch
-        epoch_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
-        logger.info('Epoch: %d Loss: %f' % (epoch, epoch_loss))
         
+        epoch_loss = sum(epoch_loss_collector) / len(epoch_loss_collector)
+        '''
+        if epoch > 1 and np.abs(epoch_loss - epoch_loss_prev)/epoch_loss < 0.001:
+            flag = True
+            break
+        '''
+        epoch_loss_prev = epoch_loss
+        logger.info('Epoch: %d Loss: %f' % (epoch, epoch_loss))
+    '''    
     for i in net_ids:
         train_acc = compute_accuracy([net[i][0], net[0][1], net[i][2]], train_dataloader, device=device)
         test_acc, conf_matrix = compute_accuracy([net[i][0], net[0][1], net[i][2]], test_dataloader, get_confusion_matrix=True, device=device)
             
         logger.info(f'>> Training accuracy of {i}: {train_acc}  >> Test accuracy: {i}: {test_acc}')
-     
-
+    '''
+    train_acc = 0
+    test_acc = 0
     logger.info(' ** Training complete **')
-    return train_acc, test_acc
+    return (0,0)
 
 
 
@@ -1353,7 +1407,7 @@ def local_train_net_mergesfl(nets, selected, args, net_dataidx_map, test_dl = No
         
     n_epoch = args.epochs
     print(selected)
-    trainacc, testacc = train_net_mergesfl(selected, nets, train_dl_local, test_dl, n_epoch, args.lr, args.optimizer, device=device)
+    trainacc, testacc = train_net_mergesfl(selected, nets, train_dl_local, test_dl, n_epoch, args.lr, args.optimizer, device=device, pososto=args.pososto)
     
     logger.info("net %d final test acc %f" % (0, testacc))
     avg_acc += testacc
@@ -1899,7 +1953,9 @@ if __name__ == '__main__':
                     nets[idx][1].load_state_dict(global_para_b)
                     nets[idx][2].load_state_dict(global_para_c)
 
-            
+            if round == 0:
+                args_b = args.lr
+                args_b = args.lr/1000
             local_train_net_mergesfl(nets, selected, args, net_dataidx_map, test_dl = test_dl_global, device=device)
 
             # update global model
@@ -1915,17 +1971,23 @@ if __name__ == '__main__':
                 if idx == 0:
                     for key in net_para_a:
                         global_para_a[key] = net_para_a[key]* fed_avg_freqs[idx]
+                    '''
                     for key in net_para_c:
                         global_para_c[key] = net_para_c[key] * fed_avg_freqs[idx]
+                    '''
                 else:
                     for key in net_para_a:
                         global_para_a[key] += net_para_a[key] * fed_avg_freqs[idx]
+                    '''
                     for key in net_para_c:
                         global_para_c[key] += net_para_c[key] * fed_avg_freqs[idx]
+                    '''
                 
                 if selected[idx] == 0:
                     for key in net_para_b:
                         global_para_b[key] = net_para_b[key]
+                    for key in net_para_c:
+                        global_para_c[key] = net_para_c[key]
             
             global_model[0].load_state_dict(global_para_a)
             global_model[1].load_state_dict(global_para_b)
