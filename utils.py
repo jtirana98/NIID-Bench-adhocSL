@@ -755,7 +755,7 @@ class AddGaussianNoise(object):
     def __repr__(self):
         return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
 
-def get_dataloader(dataset, datadir, train_bs, test_bs, dataidxs=None, noise_level=0, net_id=None, total=0):
+def get_dataloader(dataset, datadir, train_bs, test_bs, dataidxs=None, noise_level=0, net_id=None, total=0, model='alexnet'):
     if dataset in ('mnist', 'femnist', 'fmnist', 'cifar10', 'svhn', 'generated', 'covtype', 'a9a', 'rcv1', 'SUSY', 'cifar100', 'tinyimagenet'):
         if dataset == 'mnist':
             dl_obj = MNIST_truncated
@@ -798,22 +798,40 @@ def get_dataloader(dataset, datadir, train_bs, test_bs, dataidxs=None, noise_lev
 
         elif dataset == 'cifar10':
             dl_obj = CIFAR10_truncated
-
-            transform_train = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Lambda(lambda x: F.pad(
-                    Variable(x.unsqueeze(0), requires_grad=False),
-                    (4, 4, 4, 4), mode='reflect').data.squeeze()),
-                transforms.ToPILImage(),
-                transforms.RandomCrop(32),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                AddGaussianNoise(0., noise_level, net_id, total)
-            ])
-            # data prep for test set
-            transform_test = transforms.Compose([
-                transforms.ToTensor(),
-                AddGaussianNoise(0., noise_level, net_id, total)])
+            if model == 'alexnet':
+                transform_train = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Lambda(lambda x: F.pad(
+                        Variable(x.unsqueeze(0), requires_grad=False),
+                        (4, 4, 4, 4), mode='reflect').data.squeeze()),
+                    transforms.ToPILImage(),
+                    transforms.RandomCrop(32),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    AddGaussianNoise(0., noise_level, net_id, total),
+                    transforms.Resize((70, 70))
+                ])
+                # data prep for test set
+                transform_test = transforms.Compose([
+                    transforms.ToTensor(),
+                    AddGaussianNoise(0., noise_level, net_id, total),
+                    transforms.Resize((70, 70))])
+            else:
+                transform_train = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Lambda(lambda x: F.pad(
+                        Variable(x.unsqueeze(0), requires_grad=False),
+                        (4, 4, 4, 4), mode='reflect').data.squeeze()),
+                    transforms.ToPILImage(),
+                    transforms.RandomCrop(32),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    AddGaussianNoise(0., noise_level, net_id, total)
+                ])
+                # data prep for test set
+                transform_test = transforms.Compose([
+                    transforms.ToTensor(),
+                    AddGaussianNoise(0., noise_level, net_id, total)])
             
         elif dataset == 'cifar100':
             dl_obj = CIFAR100_truncated

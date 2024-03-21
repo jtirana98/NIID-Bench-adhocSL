@@ -23,6 +23,7 @@ from utils import *
 from vggmodel import *
 from resnetcifar import *
 from models import resnet_split_model 
+from models import alexnet_split
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -130,7 +131,10 @@ def init_nets(net_configs, dropout_p, n_parties, args):
                             net = get_simpleCNNMINST_split(args.cut_a, args.cut_b, input_dim=(16 * 4 * 4), hidden_dims=[120, 84], output_dim=10)
                         else:
                             net = get_simpleCNN_split(args.cut_a, args.cut_b, input_dim=(16 * 5 * 5), hidden_dims=[120, 84], output_dim=10)
-
+                    elif args.model == "alexnet":
+                        net = alexnet_split.get_AlexNet_split(args.cut_a, args.cut_b)
+                elif args.model == "alexnet":
+                    net = alexnet_split.get_AlexNet_split(args.cut_a, args.cut_b)
                 elif args.model == "vgg":
                     net = vgg11()
                 elif args.model == "simple-cnn":
@@ -1333,19 +1337,19 @@ def local_train_net(nets, selected, args, net_dataidx_map, test_dl = None, devic
             noise_level = 0
 
         if args.noise_type == 'space':
-            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1)
+            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1, model=args.model)
         else:
             if data_sharing:
                 noise_level = args.noise / (args.n_parties - 1) * net_id
                 train_dl_local = []
                 for i in range(len(helpers[net_id])):
                     dataidxs_ = net_dataidx_map[helpers[net_id][i]]
-                    train_dl_local_, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs_, noise_level)
+                    train_dl_local_, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs_, noise_level, model=args.model)
                     train_dl_local.append(train_dl_local_)
             else:
                 noise_level = args.noise / (args.n_parties - 1) * net_id
-                train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level)
-        train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32)
+                train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level,model=args.model)
+        train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, model=args.model)
         n_epoch = args.epochs
 
         if data_sharing:
@@ -1401,11 +1405,11 @@ def local_train_net_mergesfl(nets, selected, args, net_dataidx_map, test_dl = No
             noise_level = 0
 
         if args.noise_type == 'space':
-            train_dl_local_, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1)
+            train_dl_local_, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1, model=args.model)
             train_dl_local[net_id] = train_dl_local_
         else:
             dataidxs_ = net_dataidx_map[net_id]
-            train_dl_local_, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs_, noise_level)
+            train_dl_local_, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs_, noise_level, model=args.model)
             train_dl_local[net_id] = train_dl_local_
             
         
@@ -1446,11 +1450,11 @@ def local_train_net_fedprox(nets, selected, global_model, args, net_dataidx_map,
             noise_level = 0
 
         if args.noise_type == 'space':
-            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1)
+            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1, model=args.model)
         else:
             noise_level = args.noise / (args.n_parties - 1) * net_id
-            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level)
-        train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32)
+            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, model=args.model)
+        train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, model=args.model)
         n_epoch = args.epochs
 
         trainacc, testacc = train_net_fedprox(net_id, net, global_model, train_dl_local, test_dl, n_epoch, args.lr, args.optimizer, args.mu, device=device)
@@ -1509,11 +1513,11 @@ def local_train_net_scaffold(nets, selected, global_model, c_nets, c_global, arg
             noise_level = 0
 
         if args.noise_type == 'space':
-            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1)
+            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1, model=args.model)
         else:
             noise_level = args.noise / (args.n_parties - 1) * net_id
-            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level)
-        train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32)
+            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, model=args.model)
+        train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, model=args.model)
         n_epoch = args.epochs
 
 
@@ -1607,11 +1611,11 @@ def local_train_net_fednova(nets, selected, global_model, args, net_dataidx_map,
             noise_level = 0
 
         if args.noise_type == 'space':
-            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1)
+            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1, model=args.model)
         else:
             noise_level = args.noise / (args.n_parties - 1) * net_id
-            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level)
-        train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32)
+            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, model=args.model)
+        train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, model=args.model)
         n_epoch = args.epochs
 
 
@@ -1649,11 +1653,11 @@ def local_train_net_moon(nets, selected, args, net_dataidx_map, test_dl=None, gl
             noise_level = 0
 
         if args.noise_type == 'space':
-            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1)
+            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, net_id, args.n_parties-1, model=args.model)
         else:
             noise_level = args.noise / (args.n_parties - 1) * net_id
-            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level)
-        train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32)
+            train_dl_local, test_dl_local, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, model=args.model)
+        train_dl_global, test_dl_global, _, _ = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, model=args.model)
         n_epoch = args.epochs
 
         prev_models=[]
@@ -1785,7 +1789,7 @@ if __name__ == '__main__':
     train_dl_global, test_dl_global, train_ds_global, test_ds_global = get_dataloader(args.dataset,
                                                                                         args.datadir,
                                                                                         args.batch_size,
-                                                                                        32)
+                                                                                        32, model=args.model)
 
     print("len train_dl_global:", len(train_ds_global))
 
@@ -1805,10 +1809,10 @@ if __name__ == '__main__':
                 noise_level = 0
 
             if args.noise_type == 'space':
-                train_dl_local, test_dl_local, train_ds_local, test_ds_local = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, party_id, args.n_parties-1)
+                train_dl_local, test_dl_local, train_ds_local, test_ds_local = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, party_id, args.n_parties-1, model=args.model)
             else:
                 noise_level = args.noise / (args.n_parties - 1) * party_id
-                train_dl_local, test_dl_local, train_ds_local, test_ds_local = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level)
+                train_dl_local, test_dl_local, train_ds_local, test_ds_local = get_dataloader(args.dataset, args.datadir, args.batch_size, 32, dataidxs, noise_level, model=args.model)
             train_all_in_list.append(train_ds_local)
             test_all_in_list.append(test_ds_local)
         train_all_in_ds = data.ConcatDataset(train_all_in_list)
