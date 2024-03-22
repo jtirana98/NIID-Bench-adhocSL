@@ -129,7 +129,7 @@ class AlexNet_split(nn.Module):
 
         if self.first_cut == -1:
             start = True
-        
+        #layer 1
         if start or ((not start) and (self.first_cut == layer)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > layer)):
@@ -140,7 +140,7 @@ class AlexNet_split(nn.Module):
                 # reached end
                 return x
         layer += 1
-
+        #layer 2
         if start or ((not start) and (self.first_cut == layer)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > layer)):
@@ -151,7 +151,7 @@ class AlexNet_split(nn.Module):
                 # reached end
                 return x
         layer += 1
-
+        #layer 3
         if start or ((not start) and (self.first_cut == layer)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > layer)):
@@ -162,7 +162,7 @@ class AlexNet_split(nn.Module):
                 # reached end
                 return x
         layer += 1
-
+        #layer 4
         if start or ((not start) and (self.first_cut == layer)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > layer)):
@@ -173,7 +173,7 @@ class AlexNet_split(nn.Module):
                 # reached end
                 return x
         layer += 1
-
+        #layer 5
         if start or ((not start) and (self.first_cut == layer)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > layer)):
@@ -185,7 +185,7 @@ class AlexNet_split(nn.Module):
                 return x
         layer += 1
 
-
+        #layer 6
         if start or ((not start) and (self.first_cut == layer)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > layer)):
@@ -199,7 +199,7 @@ class AlexNet_split(nn.Module):
                 return x
         layer += 1
 
-        
+        #layer 7
         if start or ((not start) and (self.first_cut == layer)): #when to start
             # have already started, or just started
             if end or ((not end) and (self.last_cut > layer)):
@@ -211,9 +211,16 @@ class AlexNet_split(nn.Module):
                 return x
         layer += 1
         
-        x = self.fc2(x)
+        #layer 8
+        if start or ((not start) and (self.first_cut == layer)): #when to start
+            # have already started, or just started
+            if end or ((not end) and (self.last_cut > layer)):
+                x = self.fc2(x)
 
-
+                start = True
+            else:
+                # reached end
+                return x
         return x
     
 
