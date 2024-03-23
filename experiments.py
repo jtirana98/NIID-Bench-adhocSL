@@ -638,8 +638,8 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
 
                     x = x_s[i_helper][start_a:end_a_].to(device)
                     
-                    net[selected[i_helper]][0].to(device)
-                    outa = net[selected[i_helper]][0](x)
+                    net[i_helper][0].to(device)
+                    outa = net[i_helper][0](x)
                     outa.to(device)
                     my_out_a.append(outa)
                     det_out_a = my_out_a[-1].clone().detach().requires_grad_(True)
@@ -658,23 +658,6 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                     det_out_b.to(device)
                     out_b_detached.append(det_out_b)
 
-                '''
-                start = 0
-                portion_ = 0
-                grad_bs = []
-                loss_ = 0
-                for i_helper in range(num_helpers):
-                    optimizer_c[i_helper].zero_grad()
-                    
-                    start = start + portion_#i_helper*portion
-                    end = start + portion
-                    if len(targets[i_helper]) <  end_a:
-                        if  len(targets[i_helper]) - start_a > 0:
-                            end = start + len(targets[i_helper]) - start_a
-                        else:
-                            end = start
-                    portion_ = end - start
-                '''
                 start = 0
                 portion_ = 0
                 grad_bs = []
@@ -727,8 +710,9 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
 
                 start = 0
                 portion_ = 0
-                
+                #print(f'WX WX WX WX {it}')
                 for i_helper in range(num_helpers):
+                    #print(f'is helper {i_helper}')
                     start = start + portion_
                     end = start + portion
 
@@ -739,9 +723,9 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                             end = start
                     portion_ = end - start
                     
-                    my_out_a[i_helper].backward(grad_as[i_helper])
+                    my_out_a[i_helper].backward(grad_as[i_helper].clone())
                     optimizer_a[i_helper].step()
-                    
+                #print('ola kala hihihihiihhiihihih')
                 cnt += 1
                 loss__ = loss_/num_helpers
                 epoch_loss_collector.append(loss__)
