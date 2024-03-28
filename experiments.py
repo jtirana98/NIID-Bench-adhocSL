@@ -710,7 +710,6 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
 
                 start = 0
                 portion_ = 0
-                #print(f'WX WX WX WX {it}')
                 for i_helper in range(num_helpers):
                     #print(f'is helper {i_helper}')
                     start = start + portion_
@@ -725,7 +724,6 @@ def train_net_mergesfl(net_ids, net, train_dataloader, test_dataloader, epochs, 
                     
                     my_out_a[i_helper].backward(grad_as[i_helper].clone())
                     optimizer_a[i_helper].step()
-                #print('ola kala hihihihiihhiihihih')
                 cnt += 1
                 loss__ = loss_/num_helpers
                 epoch_loss_collector.append(loss__)
