@@ -41,18 +41,6 @@ recorder: SummaryWriter = SummaryWriter(os.path.join('runs', args.expname))
 if not os.path.exists(RESULT_PATH):
     os.makedirs(RESULT_PATH, exist_ok=True)
 
-# init logger
-logger = logging.getLogger(os.path.basename(__file__).split('.')[0])
-logger.setLevel(logging.INFO)
-
-# now = time.strftime("%Y-%m-%d-%H_%M_%S",time.localtime(time.time()))
-filename = RESULT_PATH + args.expname + "_" +os.path.basename(__file__).split('.')[0] +'.log'
-fileHandler = logging.FileHandler(filename=filename)
-formatter = logging.Formatter("%(message)s")
-fileHandler.setFormatter(formatter)
-logger.addHandler(fileHandler)
-
-
 def non_iid_partition(ratio, train_class_num, worker_num):
     partition_sizes = np.ones((train_class_num, worker_num)) * ((1 - ratio) / (worker_num-1))
 
@@ -119,19 +107,8 @@ def partition_data(dataset_type, data_pattern, worker_num=10):
 def main():
     worker_num = args.worker_num
 
-    path = os.getcwd()
-    print (path)
-    path = path+"//"+"result_recorder"
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-    now = time.strftime("%Y-%m-%d-%H_%M_%S",time.localtime(time.time()))
-    path = path + "//" + now + "_record.txt"
-    result_out = open(path, 'w+')
-    print(args.__dict__,file=result_out)
-    result_out.write('\n')
-    result_out.write("epoch_idx, total_time, total_bandwith, total_resource, acc, test_loss")
-    result_out.write('\n')
+    print(args.__dict__)
+    
 
     client_global_model, server_global_model = models.create_model_instance_SL(args.dataset_type, args.model_type, 1)
     nets, _ = models.create_model_instance_SL(args.dataset_type, args.model_type, worker_num)
@@ -246,7 +223,6 @@ def main():
        
         server_global_model.to('cpu')
         test_loss, acc = test(client_global_model, server_global_model, test_loader)
-        logger.info("Epoch: {}, accuracy: {}, test_loss: {}\n".format(epoch_idx, acc, test_loss))
         print("Epoch: {}, accuracy: {}, test_loss: {}".format(epoch_idx, acc, test_loss))
 
         global_model_par = client_global_model.state_dict()
