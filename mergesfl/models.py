@@ -19,7 +19,16 @@ def create_model_instance_SL(dataset_type, model_type, n_parties, class_num=10):
         return CNN_HAR1(), CNN_HAR2()
     elif dataset_type == 'SPEECH':
         return M5_1(), M5_2()
+    
 
+def create_model_instance_SL_two_splits(dataset_type, model_type, n_parties, class_num=10):
+    client_nets = {net_i: None for net_i in range(n_parties)}
+    if dataset_type == 'CIFAR10':
+        server = AlexNet_DF2b()
+        for net_i in range(n_parties):
+            net = (AlexNet_DF1a(), AlexNet_DF2c())
+            client_nets[net_i] = net
+        return client_nets, server
 
 class AlexNet_DF1(nn.Module):
     def __init__(self):
@@ -75,6 +84,69 @@ class AlexNet_DF2(nn.Module):
         x = x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return F.log_softmax(x, dim=1)
+    
+class AlexNet_DF1a(nn.Module):
+    def __init__(self):
+        super(AlexNet_DF1, self).__init__()
+        self.features = nn.Sequential(
+            #layer 1
+            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            #layer 2
+            nn.Conv2d(64, 192, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            #layer 3
+            nn.Conv2d(192, 384, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+            #layer 4
+            nn.Conv2d(384, 256, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(inplace=True),
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        return x
+    
+class AlexNet_DF2b(nn.Module):
+    def __init__(self, class_num=10):
+        super(AlexNet_DF2b, self).__init__()
+        self.features = nn.Sequential(
+            #layer 5
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.classifier = nn.Sequential(
+            #layer 6
+            nn.Dropout(),
+            nn.Linear(256 * 4 * 4, 4096),
+            nn.ReLU(inplace=True),
+            #layer 7
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
+
+class AlexNet_DF2c(nn.Module):
+    def __init__(self, class_num=10):
+        super(AlexNet_DF2c, self).__init__()
+        self.classifier = nn.Sequential(
+            #layer 8
+            nn.Linear(4096, class_num),
+        )
+
+    def forward(self, x):
+        x = self.classifier(x)
+        return F.log_softmax(x, dim=1)
+
 
 class EMNIST_CNN1(nn.Module):
     def __init__(self):

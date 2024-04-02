@@ -29,17 +29,11 @@ parser.add_argument('--weight_decay', type=float, default=0.0)
 parser.add_argument('--data_path', type=str, default='./data')
 parser.add_argument('--device', type=str, default='cuda:0', help='The device to run the program')
 parser.add_argument('--expname', type=str, default='MergeSFL')
+parser.add_argument('--two_splits', action="store_true", help='do U-Shape')
 
 
 args = parser.parse_args()
 device = torch.device(args.device)
-
-RESULT_PATH = os.getcwd() + '/server/'
-
-recorder: SummaryWriter = SummaryWriter(os.path.join('runs', args.expname))
-
-if not os.path.exists(RESULT_PATH):
-    os.makedirs(RESULT_PATH, exist_ok=True)
 
 def non_iid_partition(ratio, train_class_num, worker_num):
     partition_sizes = np.ones((train_class_num, worker_num)) * ((1 - ratio) / (worker_num-1))
@@ -109,16 +103,28 @@ def main():
 
     print(args.__dict__)
     
+    if args.two_splits:
+        client_global_model, server_global_model = models.create_model_instance_SL_two_splits(args.dataset_type, args.model_type, 1)
+        nets, _ = models.create_model_instance_SL_two_splits(args.dataset_type, args.model_type, worker_num)
 
-    client_global_model, server_global_model = models.create_model_instance_SL(args.dataset_type, args.model_type, 1)
-    nets, _ = models.create_model_instance_SL(args.dataset_type, args.model_type, worker_num)
+        client_global_model_a = client_global_model[0][0]
+        client_global_model_b = client_global_model[0][1]
 
-    #client_global_model.to(device)
-    #server_global_model.to(device)
-    client_global_model = client_global_model[0]
-    global_model_par = client_global_model.state_dict()
-    for net_id, net in nets.items():
-        net.load_state_dict(global_model_par)
+        global_model_par_a = client_global_model_a.state_dict()
+        global_model_par_b = client_global_model_b.state_dict()
+
+        for net_id, net in nets.items():
+            net[0].load_state_dict(global_model_par_a)
+            net[1].load_state_dict(global_model_par_b)
+
+    else:
+        client_global_model, server_global_model = models.create_model_instance_SL(args.dataset_type, args.model_type, 1)
+        nets, _ = models.create_model_instance_SL(args.dataset_type, args.model_type, worker_num)
+
+        client_global_model = client_global_model[0]
+        global_model_par = client_global_model.state_dict()
+        for net_id, net in nets.items():
+            net.load_state_dict(global_model_par)
 
     # Create model instance
     train_dataset, test_dataset, train_data_partition, labels = partition_data(args.dataset_type, args.data_pattern, worker_num)
@@ -154,10 +160,18 @@ def main():
         else:
             global_optim = optim.SGD(server_global_model.parameters(), lr=epoch_lr, momentum=args.momentum, nesterov=True, weight_decay=args.weight_decay)
 
-        clients_optimizers = []
+        if args.two_splits:
+            clients_optimizers_a = []
+            clients_optimizers_b = []
+        else:
+            clients_optimizers = []
         for worker_idx in range(worker_num):
             if args.momentum < 0:
-                clients_optimizers.append(optim.SGD(nets[worker_idx].parameters(), lr=epoch_lr, weight_decay=args.weight_decay))
+                if args.two_splits:
+                    clients_optimizers_a.append(optim.SGD(nets[worker_idx][0].parameters(), lr=epoch_lr, weight_decay=args.weight_decay))
+                    clients_optimizers_b.append(optim.SGD(nets[worker_idx][1].parameters(), lr=epoch_lr, weight_decay=args.weight_decay))
+                else:    
+                    clients_optimizers.append(optim.SGD(nets[worker_idx].parameters(), lr=epoch_lr, weight_decay=args.weight_decay))
             else:
                 clients_optimizers.append(optim.SGD(nets[worker_idx].parameters(), momentum=args.momentum, nesterov=True, lr=epoch_lr, weight_decay=args.weight_decay))
 
@@ -167,67 +181,142 @@ def main():
         
         # client side
         for iter_idx in range(local_steps):
-            clients_smash_data = []
-            client_send_data = []
-            client_send_targets = []
-            for worker_idx in range(worker_num):
-                inputs, targets = next(client_train_loader[worker_idx])
+            if args.two_splits:
+                sum_bsz = sum([bsz_list[i] for i in range(worker_num)])
+                global_optim.zero_grad()
+                for worker_idx in range(worker_num):
+                    inputs, targets = next(client_train_loader[worker_idx])
 
-                inputs, targets = inputs.to(device), targets.to(device)
+                    inputs, targets = inputs.to(device), targets.to(device)
 
-                nets[worker_idx].to(device)
+                    nets[worker_idx][0].to(device)
+                    nets[worker_idx][1].to(device)
 
-                clients_smash_data.append(nets[worker_idx](inputs))
+                    # Forward propopagation
+                    clients_smash_data = nets[worker_idx][0](inputs)
 
-                send_smash = clients_smash_data[-1].detach()
-                client_send_data.append(send_smash)
-                client_send_targets.append(targets)
-                #break
-        
-            m_data = torch.cat(client_send_data, dim=0)
-            m_target = torch.cat(client_send_targets, dim=0)
+                    client_send_data = clients_smash_data.detach()
+                    client_send_data.requires_grad_()
+
+                    # server side fp
+                    server_smash_data = server_global_model(client_send_data)
+                    server_send_data = server_smash_data.detach()
+
+                    server_send_data.requires_grad_()
+                    output = nets[worker_idx][1](server_send_data)
+
+                    # Backward propopagation
+                    loss = F.cross_entropy(output, targets.long())
+                    
+                    clients_optimizers_b[worker_idx].zero_grad()
+                    loss.backward()
+                    clients_optimizers_b[worker_idx].step()
+
+                    server_grad = server_send_data.grad
+                    server_smash_data.backward(server_grad.to(device))
+                    
+                    clients_grad = client_send_data.grad
+                    clients_optimizers_a[worker_idx].zero_grad()
+                    clients_smash_data.backward(clients_grad.to(device))
+                    clients_optimizers_a[worker_idx].step()
+                global_optim.step()
+            else:
+                clients_smash_data = []
+                client_send_data = []
+                client_send_targets = []
+
+                sum_bsz = sum([bsz_list[i] for i in range(worker_num)])
+                for worker_idx in range(worker_num):
+                    inputs, targets = next(client_train_loader[worker_idx])
+
+                    inputs, targets = inputs.to(device), targets.to(device)
+
+                    nets[worker_idx].to(device)
+
+                    clients_smash_data.append(nets[worker_idx](inputs))
+
+                    send_smash = clients_smash_data[-1].detach()
+                    client_send_data.append(send_smash)
+                    client_send_targets.append(targets)
+                    #break
             
-            m_data.requires_grad_()
+                m_data = torch.cat(client_send_data, dim=0)
+                m_target = torch.cat(client_send_targets, dim=0)
+                
+                m_data.requires_grad_() 
 
-            # server side fp
-            outputs = server_global_model(m_data)
-            loss = F.cross_entropy(outputs, m_target.long())
+                # server side fp
+                outputs = server_global_model(m_data)
+                loss = F.cross_entropy(outputs, m_target.long())
 
-            # server side bp
-            global_optim.zero_grad()
-            loss.backward()
-            global_optim.step()
-            
-            # gradient dispatch
-            sum_bsz = sum([bsz_list[i] for i in range(worker_num)])
-            bsz_s = 0
-            for worker_idx in range(worker_num):
-                clients_grad = m_data.grad[bsz_s: bsz_s + bsz_list[worker_idx]] * sum_bsz / bsz_list[worker_idx]
-                bsz_s += bsz_list[worker_idx]
+                # server side bp
+                global_optim.zero_grad()
+                loss.backward()
+                global_optim.step()
+                
+                # gradient dispatch
+                
+                bsz_s = 0
+                for worker_idx in range(worker_num):
+                    clients_grad = m_data.grad[bsz_s: bsz_s + bsz_list[worker_idx]] * sum_bsz / bsz_list[worker_idx]
+                    bsz_s += bsz_list[worker_idx]
 
-                clients_optimizers[worker_idx].zero_grad()
-                clients_smash_data[worker_idx].backward(clients_grad.to(device))
-                clients_optimizers[worker_idx].step()
+                    clients_optimizers[worker_idx].zero_grad()
+                    clients_smash_data[worker_idx].backward(clients_grad.to(device))
+                    clients_optimizers[worker_idx].step()
                 #break
         with torch.no_grad():
             for worker_idx in range(worker_num):
-                nets[worker_idx].to('cpu')
-                net_para = nets[worker_idx].cpu().state_dict()
-                if worker_idx == 0:
-                    for key in net_para:
-                        global_model_par[key] = net_para[key]/worker_num
+                if args.two_splits:
+                    nets[worker_idx][0].to('cpu')
+                    nets[worker_idx][1].to('cpu')
+                    net_para_a = nets[worker_idx][0].cpu().state_dict()
+                    net_para_b = nets[worker_idx][1].cpu().state_dict()
                 else:
-                    for key in net_para:
-                        global_model_par[key] += net_para[key]/worker_num
-            client_global_model.load_state_dict(global_model_par)
+                    nets[worker_idx].to('cpu')
+                    net_para = nets[worker_idx].cpu().state_dict()
+                if worker_idx == 0:
+                    if args.two_splits:
+                        for key in net_para_a:
+                            global_model_par_a[key] = net_para_a[key]/worker_num
+                        for key in net_para_b:
+                            global_model_par_b[key] = net_para_b[key]/worker_num
+                    else:
+                        for key in net_para:
+                            global_model_par[key] = net_para[key]/worker_num
+                else:
+                    if args.two_splits:
+                        for key in net_para_a:
+                            global_model_par_a[key] += net_para_a[key]/worker_num
+                        for key in net_para_b:
+                            global_model_par_b[key] += net_para_b[key]/worker_num
+                    else:
+                        for key in net_para:
+                            global_model_par[key] += net_para[key]/worker_num
+            if args.two_splits:
+                client_global_model_a.load_state_dict(global_model_par_a)
+                client_global_model_b.load_state_dict(global_model_par_b)
+            else:
+                client_global_model.load_state_dict(global_model_par)
        
         server_global_model.to('cpu')
-        test_loss, acc = test(client_global_model, server_global_model, test_loader)
+        if args.two_splits:
+            test_loss, acc = test((client_global_model_a, client_global_model_b), 
+                                  server_global_model, test_loader, two_split=args.two_splits)
+        else:
+            test_loss, acc = test(client_global_model, server_global_model, test_loader, two_split=args.two_splits)
         print("Epoch: {}, accuracy: {}, test_loss: {}".format(epoch_idx, acc, test_loss))
-
-        global_model_par = client_global_model.state_dict()
-        for net_id, net in nets.items():
-            net.load_state_dict(global_model_par)
+        
+        if args.two_splits:
+            global_model_par_a = client_global_model_a.state_dict()
+            global_model_par_b = client_global_model_b.state_dict()
+            for net_id, net in nets.items():
+                net[0].load_state_dict(global_model_par_a)
+                net[1].load_state_dict(global_model_par_b)
+        else:
+            global_model_par = client_global_model.state_dict()
+            for net_id, net in nets.items():
+                net.load_state_dict(global_model_par)
 
 
 

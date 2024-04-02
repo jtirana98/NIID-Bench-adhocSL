@@ -60,9 +60,15 @@ def control(args, active_num, worker_list):
     return selected_ids, bsz_list
 
 
-def test(model_fe, model_p, data_loader, device=torch.device("cpu")):
+def test(model_fe, model_p, data_loader, device=torch.device("cpu"), two_split=False):
     model_p.eval()
-    model_fe.eval()
+    
+    if two_split:
+        model_fe[0].eval()
+        model_fe[1].eval()
+    else:
+        model_fe.eval()
+    
     data_loader = data_loader.loader
     test_loss = 0.0
     test_accuracy = 0.0
@@ -71,10 +77,17 @@ def test(model_fe, model_p, data_loader, device=torch.device("cpu")):
         for data, target in data_loader:
 
             data, target = data.to(device), target.to(device)
-
-            output1 = model_fe(data)
+            
+            if two_split:
+                output1 = model_fe[0](data)
+            else:
+                output1 = model_fe(data)
+            
             output = model_p(output1)
 
+            if two_split:
+                output = model_fe[1](output)
+            
             # sum up batch loss
             loss_func = nn.CrossEntropyLoss(reduction='sum') 
             test_loss += loss_func(output, target.long()).item()
