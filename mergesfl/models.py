@@ -87,7 +87,7 @@ class AlexNet_DF2(nn.Module):
     
 class AlexNet_DF1a(nn.Module):
     def __init__(self):
-        super(AlexNet_DF1, self).__init__()
+        super(AlexNet_DF1a, self).__init__()
         self.features = nn.Sequential(
             #layer 1
             nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1),
