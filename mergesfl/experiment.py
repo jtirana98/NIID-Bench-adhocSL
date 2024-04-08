@@ -30,6 +30,8 @@ parser.add_argument('--data_path', type=str, default='./data')
 parser.add_argument('--device', type=str, default='cuda:0', help='The device to run the program')
 parser.add_argument('--expname', type=str, default='MergeSFL')
 parser.add_argument('--two_splits', action="store_true", help='do U-Shape')
+parser.add_argument('--type_noniid', type=str, default='default')
+parser.add_argument('--level', type=int, default=10)
 
 
 args = parser.parse_args()
@@ -40,6 +42,15 @@ def non_iid_partition(ratio, train_class_num, worker_num):
 
     for i in range(train_class_num):
         partition_sizes[i][i%worker_num]=ratio
+
+    return partition_sizes
+
+def non_iid_partition_strict(ratio, level, train_class_num, worker_num):
+    partition_sizes = np.ones((train_class_num, worker_num)) * ((1 - ratio) / (worker_num-level))
+
+    for i in range(train_class_num):
+        for j in range(level):
+            partition_sizes[i][(i+j)%worker_num]=ratio
 
     return partition_sizes
 
@@ -97,6 +108,25 @@ def partition_data(dataset_type, data_pattern, worker_num=10):
     train_data_partition = datasets.LabelwisePartitioner(train_dataset, partition_sizes=partition_sizes, class_num=train_class_num, labels=labels)
     return train_dataset, test_dataset, train_data_partition, labels
 
+def partition_data_non_iid_strict(dataset_type, data_pattern, worker_num=10):
+    train_dataset, test_dataset = datasets.load_datasets(dataset_type)
+    labels = None
+    if dataset_type == "CIFAR10" or dataset_type == "FashionMNIST":
+        train_class_num = 10
+
+    
+    if data_pattern == 10:
+        partition_sizes = np.ones((train_class_num, worker_num)) * (1.0 / worker_num)
+    else:
+        non_iid_ration = 1/data_pattern 
+        partition_sizes = non_iid_partition_strict(non_iid_ration, data_pattern, train_class_num, worker_num)
+    
+    print(partition_sizes)
+    
+    train_data_partition = datasets.LabelwisePartitioner(train_dataset, partition_sizes=partition_sizes, class_num=train_class_num, labels=labels)
+    return train_dataset, test_dataset, train_data_partition, labels
+
+
 
 def main():
     worker_num = args.worker_num
@@ -127,7 +157,10 @@ def main():
             net.load_state_dict(global_model_par)
 
     # Create model instance
-    train_dataset, test_dataset, train_data_partition, labels = partition_data(args.dataset_type, args.data_pattern, worker_num)
+    if args.type_noniid == 'default':
+        train_dataset, test_dataset, train_data_partition, labels = partition_data(args.dataset_type, args.data_pattern, worker_num)
+    else:
+        train_dataset, test_dataset, train_data_partition, labels = partition_data_non_iid_strict(args.dataset_type, args.data_pattern, worker_num)
 
     if labels:
         test_loader = datasets.create_dataloaders(test_dataset, batch_size=64, shuffle=False, collate_fn=lambda x: datasets.collate_fn(x, labels))
