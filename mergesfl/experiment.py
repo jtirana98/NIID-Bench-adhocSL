@@ -46,7 +46,8 @@ def non_iid_partition(ratio, train_class_num, worker_num):
     return partition_sizes
 
 def non_iid_partition_strict(ratio, level, train_class_num, worker_num):
-    partition_sizes = np.ones((train_class_num, worker_num)) * ((1 - ratio) / (worker_num-level))
+    #partition_sizes = np.ones((train_class_num, worker_num)) * ((1 - ratio) / (worker_num-level))
+    partition_sizes = np.zeros((train_class_num, worker_num))
 
     for i in range(train_class_num):
         for j in range(level):
@@ -175,6 +176,8 @@ def main():
         if labels:
             client_train_loader.append(datasets.create_dataloaders(train_dataset, batch_size=int(bsz_list[worker_idx]), selected_idxs=train_data_partition.use(worker_idx), pin_memory=False, drop_last=True, collate_fn=lambda x: datasets.collate_fn(x, labels)))
         else:
+            #print(f'for worker {worker_idx} has {train_data_partition.use(worker_idx)}')
+            print(f'for worker {worker_idx}')
             client_train_loader.append(datasets.create_dataloaders(train_dataset, batch_size=int(bsz_list[worker_idx]), selected_idxs=train_data_partition.use(worker_idx), pin_memory=False, drop_last=True))
         #break
     

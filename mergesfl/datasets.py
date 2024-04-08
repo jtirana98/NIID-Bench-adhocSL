@@ -130,6 +130,7 @@ def create_dataloaders(dataset, batch_size, selected_idxs=None, shuffle=True, pi
                                     shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers, drop_last=drop_last, collate_fn=collate_fn)
     else:
         partition = Partition(dataset, selected_idxs)
+        print(partition)
         dataloader = DataLoader(partition, batch_size=batch_size,
                                     shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers, drop_last=drop_last, collate_fn=collate_fn)
     
