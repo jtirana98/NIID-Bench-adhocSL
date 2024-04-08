@@ -208,7 +208,6 @@ def main():
 
         server_global_model.train()
         local_steps = 42
-        server_global_model.to(device)
         
         # client side
         for iter_idx in range(local_steps):
@@ -238,6 +237,7 @@ def main():
                 m_data.requires_grad_() 
 
                 # server side fp
+                nets_server[m].to(device)
                 outputs = nets_server[m](m_data)
                 loss = F.cross_entropy(outputs, m_target.long())
 
