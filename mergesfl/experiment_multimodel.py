@@ -258,7 +258,8 @@ def main():
                     clients_optimizers[m][worker_idx].zero_grad()
                     clients_smash_data[worker_idx].backward(clients_grad.to(device))
                     clients_optimizers[m][worker_idx].step()
-
+                nets_server[m].to('cpu')
+                nets_client[m][worker_idx].to('cpu')
         with torch.no_grad():
             for m in range(args.models):
                 nets_server[m].to('cpu')
