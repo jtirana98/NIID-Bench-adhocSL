@@ -211,7 +211,9 @@ def main():
         
         # client side
         for iter_idx in range(local_steps):
+            print(f'New epoch {iter_idx}')
             for m in range(args.models):
+                print(f'model {m}')
                 clients_smash_data = []
                 client_send_data = []
                 client_send_targets = []
@@ -258,30 +260,28 @@ def main():
                     clients_optimizers[m][worker_idx].step()
 
         with torch.no_grad():
-            global_model_par = None
-            global_model_par_server = None
             for m in range(args.models):
                 nets_server[m].to('cpu')
                 net_para = nets_server[m].cpu().state_dict()
                 if m == 0:
                     for key in net_para:
-                        global_model_par_server[key] = net_para[key]/(args.models)
+                        server_global_model_par[key] = net_para[key]/(args.models)
                 else:
                     for key in net_para:
-                        global_model_par_server[key] += net_para[key]/(args.models)
+                        server_global_model_par[key] += net_para[key]/(args.models)
 
                 for worker_idx in range(worker_num):
                     nets_client[m][worker_idx].to('cpu')
                     net_para = nets_client[m][worker_idx].cpu().state_dict()
                     if worker_idx == 0 and m == 0:
                         for key in net_para:
-                            global_model_par[key] = net_para[key]/(worker_num*args.models)
+                            client_global_model_par[key] = net_para[key]/(worker_num*args.models)
                     else:
                         for key in net_para:
-                            global_model_par[key] += net_para[key]/(worker_num*args.models)
+                            client_global_model_par[key] += net_para[key]/(worker_num*args.models)
             
-            client_global_model.load_state_dict(global_model_par)
-            server_global_model.load_state_dict(global_model_par_server)
+            client_global_model.load_state_dict(client_global_model_par)
+            server_global_model.load_state_dict(server_global_model_par)
        
         server_global_model.to('cpu')
         client_global_model.to('cpu')
