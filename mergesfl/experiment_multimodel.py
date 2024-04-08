@@ -290,8 +290,11 @@ def main():
         print("Epoch: {}, accuracy: {}, test_loss: {}".format(epoch_idx, acc, test_loss))
         
         global_model_par = client_global_model.state_dict()
-        for net_id, net in nets.items():
-            net.load_state_dict(global_model_par)
+        global_model_par_server = server_global_model.state_dict()
+        for m in range(args.models):
+            nets_server.load_stat_dict(global_model_par_server)
+            for net_id, net in nets_client[m].items():
+                net.load_state_dict(global_model_par)
 
 
 
