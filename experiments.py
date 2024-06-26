@@ -392,7 +392,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
 
                     grad_b_all.to(device)
                     out_b.to(device)
-                    grad_b_all = grad_b_all / len(grad_b_all[0])
+                    grad_b_all = grad_b_all / (num_helpers*portion)
                     out_b.backward(grad_b_all)
                     optimizer_b.step()
 
