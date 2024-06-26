@@ -385,14 +385,14 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         loss_ += loss.item()                  
                         grad_b = det_out_b_.grad.clone().detach()
                         grad_b.to(device)
-                        grad_bs.append(grad_b)
+                        grad_bs.append(grad_b*portion_)
                     
                     # concate the gradients and backprop to model part b
                     grad_b_all = torch.cat(grad_bs)
 
                     grad_b_all.to(device)
                     out_b.to(device)
-                    
+                    grad_b_all = grad_b_all / len(grad_b_all[0])
                     out_b.backward(grad_b_all)
                     optimizer_b.step()
 
@@ -1833,16 +1833,15 @@ if __name__ == '__main__':
                     nets[idx][1].load_state_dict(global_para_b)
                     nets[idx][2].load_state_dict(global_para_c)
 
-            if warmup == -1:
+            if warmup == -1: # this is for FL
                 data_sharing = False
-            else:
-                data_sharing = True
-            '''
+            # else:
+            #     data_sharing = True
             elif ((round >= warmup) and (round % sl_step ==0)):
                 data_sharing = True
             else:
                 data_sharing = False
-            '''
+            
             
             local_train_net(nets, selected, args, net_dataidx_map, test_dl = test_dl_global, device=device, data_sharing=data_sharing, helpers=graph_comm)
 
