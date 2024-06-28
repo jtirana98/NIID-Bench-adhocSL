@@ -1,13 +1,13 @@
-python experiments.py --model=simple-cnn --dataset=cifar10 \
-    --alg=mergesfl \
-    --lr=0.01 \
+python experiments.py --model=resnet --dataset=mnist \
+    --alg=adhocSL \
+    --lr=0.1 \
     --batch-size=64 \
     --epochs=10 \
     --n_parties=10 \
     --mu=0.01 \
     --rho=0.9 \
     --comm_round=50 \
-    --partition=noniid-#label1  \
+    --partition=noniid-#label2  \
     --beta=0.5\
     --device='mps'\
     --datadir='./data/' \
@@ -15,9 +15,7 @@ python experiments.py --model=simple-cnn --dataset=cifar10 \
     --noise=0 \
     --sample=1 \
     --init_seed=4\
-    --cut_a=1 \
-    --cut_b=3 \
-    --warmup=1 \
-    --sl_step=1 \
-    --pososto=1
-	
+    --cut_a=2 \
+    --cut_b=5 \
+    --warmup=0 \
+    --sl_step=1

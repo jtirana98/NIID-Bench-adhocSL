@@ -517,7 +517,6 @@ class SimpleCNNMNIST(nn.Module):
     
 # ------ NEW: ADHOC configuration -----    
 def get_simpleCNNMINST_split(first_cut, last_cut, input_dim, hidden_dims, output_dim=10):
-
     model_part_a = SimpleCNNMNIST(input_dim, hidden_dims, output_dim, -1, first_cut)
     model_part_b = SimpleCNNMNIST(input_dim, hidden_dims, output_dim, first_cut, last_cut)
     model_part_c = SimpleCNNMNIST(input_dim, hidden_dims, output_dim, last_cut, -1)

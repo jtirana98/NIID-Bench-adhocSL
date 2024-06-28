@@ -235,8 +235,8 @@ class ResNet(nn.Module):
 
         return input
 
-def get_resnet18(outputs=10, first_cut=-1, last_cut=-1):
-    return ResNet(3, ResBlock, [2, 2, 2, 2], False, outputs, first_cut, last_cut)
+def get_resnet18(outputs=10, first_cut=-1, last_cut=-1, in_channels=3):
+    return ResNet(in_channels, ResBlock, [2, 2, 2, 2], False, outputs, first_cut, last_cut)
 
 def get_resnet34(outputs=10, first_cut=-1, last_cut=-1):
     return ResNet(3, ResBlock, [2, 2, 2, 2], False, outputs, first_cut, last_cut)
@@ -251,11 +251,11 @@ def get_resnet152(outputs=10, first_cut=-1, last_cut=-1):
     return ResNet(3, ResBottleneckBlock, [3, 8, 36, 3], True, outputs, first_cut, last_cut)
 
 
-def get_resnet_split(outputs, first_cut, last_cut, type):
+def get_resnet_split(outputs, first_cut, last_cut, type, in_channels=3):
     if type == 'resnet18':
-        model_part_a = get_resnet18(outputs, -1, first_cut)
-        model_part_b = get_resnet18(outputs, first_cut, last_cut)
-        model_part_c = get_resnet18(outputs, last_cut, -1)
+        model_part_a = get_resnet18(outputs, -1, first_cut, in_channels)
+        model_part_b = get_resnet18(outputs, first_cut, last_cut, in_channels)
+        model_part_c = get_resnet18(outputs, last_cut, -1, in_channels)
     if type == 'resnet34':
         model_part_a = get_resnet34(outputs, -1, first_cut)
         model_part_b = get_resnet34(outputs, first_cut, last_cut)

@@ -126,7 +126,10 @@ def init_nets(net_configs, dropout_p, n_parties, args):
                 # ------ NEW: ADHOC configuration -----
                 elif args.alg == 'adhocSL':
                     if args.model == "resnet":
-                        net = resnet_split_model.get_resnet_split(n_classes, args.cut_a, args.cut_b, args.model_type)
+                        if args.dataset in ("mnist", 'femnist', 'fmnist'):
+                            net = resnet_split_model.get_resnet_split(n_classes, args.cut_a, args.cut_b, args.model_type, in_channels=1)
+                        else:
+                            net = resnet_split_model.get_resnet_split(n_classes, args.cut_a, args.cut_b, args.model_type)
                     elif args.model == 'simple-cnn':
                         if args.dataset in ("mnist", 'femnist', 'fmnist'):
                             net = get_simpleCNNMINST_split(args.cut_a, args.cut_b, input_dim=(16 * 4 * 4), hidden_dims=[120, 84], output_dim=10)
@@ -283,6 +286,8 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
         if data_sharing:
             for tmps in zip(*train_dataloader):
                 batch_size = min([tmps[i][0].size()[0] for i in range(num_helpers)]) 
+                if batch_size < args.batch_size:
+                    continue
                 portion = int(batch_size/num_helpers)
                 if portion == 0:
                     portion = 1
@@ -300,7 +305,6 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     x_s.append(x)
                     targets.append(target)
                 for it in range(iterations):
-                    #print(f'It is {it}')
                     optimizer_a.zero_grad()
                     optimizer_b.zero_grad()
                     #optimizer_c.zero_grad()
@@ -361,7 +365,6 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                             else:
                                 end = start
                         portion_ = end - start
-                        
                         det_out_b_ = det_out_b[start:end].clone().detach().requires_grad_(True)
                         if helpers[i_helper] != net_id:
                             out = tempModel[2](det_out_b_)
@@ -392,7 +395,7 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
 
                     grad_b_all.to(device)
                     out_b.to(device)
-                    grad_b_all = grad_b_all / (num_helpers*portion)
+                    grad_b_all = grad_b_all / batch_size
                     out_b.backward(grad_b_all)
                     optimizer_b.step()
 
@@ -1669,7 +1672,6 @@ def find_helpers(dataset, net_dataidx_map, n_parties, traindata_cls_counts):
     for i in range(n_parties):
         helpers.update({i:[i]})
     for k in range(K):
-        #print(f'attribute {k}')
         times = [0 for i in range(n_parties)]
         for i in range(n_parties):
             distribution = traindata_cls_counts[i]
@@ -1747,8 +1749,7 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     random.seed(seed)
     logger.info("Partitioning data")
-    X_train, y_train, X_test, y_test, net_dataidx_map, traindata_cls_counts = partition_data(
-        args.dataset, args.datadir, args.logdir, args.partition, args.n_parties, beta=args.beta)
+    X_train, y_train, X_test, y_test, net_dataidx_map, traindata_cls_counts = partition_data(args.dataset, args.datadir, args.logdir, args.partition, args.n_parties, beta=args.beta)
 
     n_classes = len(np.unique(y_train))
 
