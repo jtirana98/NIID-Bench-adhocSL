@@ -382,8 +382,8 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                         loss = criterion(out, target)
                         loss.backward()
 
-                        if helpers[i_helper] == net_id:
-                            optimizer_c[i_helper].step()
+                        # if helpers[i_helper] == net_id:
+                        #     optimizer_c[i_helper].step()
                         
                         loss_ += loss.item()                  
                         grad_b = det_out_b_.grad.clone().detach()
@@ -399,13 +399,13 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, lr, args_o
                     out_b.backward(grad_b_all)
                     optimizer_b.step()
 
-                    for i_helper in range(num_helpers):
-                        if helpers[i_helper] == net_id:
-                            outa_a = det_out_as[i_helper]
-                            grad_a = outa_a.grad.clone().detach()
-                            my_out_a.backward(grad_a)
-                            optimizer_a.step()
-                            break
+                    # for i_helper in range(num_helpers):
+                    #     if helpers[i_helper] == net_id:
+                    #         outa_a = det_out_as[i_helper]
+                    #         grad_a = outa_a.grad.clone().detach()
+                    #         my_out_a.backward(grad_a)
+                    #         optimizer_a.step()
+                    #         break
                      
                     cnt += 1
                     loss__ = loss_/num_helpers
